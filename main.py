@@ -9,6 +9,10 @@ from fastapi import Request
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"status": "Running"}
+
 @app.post("/api/")
 
 async def analyze(file: UploadFile = File(...)):
