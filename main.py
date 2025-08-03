@@ -32,26 +32,3 @@ if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=7860)
 
 
-"""
-async def analyze(request: Request):
-    try:
-        content = await request.body()
-        question = content.decode("utf-8")
-        result = await process_question(question)
-
-        #return Response(
-        #    content=json.dumps(result),
-        #    media_type="application/json"
-        #)
-        return JSONResponse(content=result)
-
-    except Exception as e:
-        return {
-            "error": "Internal server error",
-            "details": str(e),
-            "traceback": traceback.format_exc(),
-        }
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
-"""
