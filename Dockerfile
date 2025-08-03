@@ -1,5 +1,11 @@
 FROM python:3.10-slim
 
+# Install system dependencies for Selenium and ChromeDriver
+RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-driver \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
@@ -10,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all other code
 COPY . .
 
-# Expose port for Hugging Face Spaces (must be 7860)
+# Expose port for Hugging Face Spaces
 EXPOSE 7860
 
 # Run FastAPI app with uvicorn on port 7860
