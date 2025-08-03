@@ -64,7 +64,9 @@ def clean_numeric_value(value):
         return float(value)
     try:
         value = str(value).lower().strip()
-        value = re.sub(r'[^0-9.e-]', '', value.replace('$', '').replace('₹', '').replace('t', '').replace('rk', '').replace('sm', '').replace('billion', 'e9').replace('million', 'e6').replace('\u1d40', '').replace('%', ''))
+        value = re.sub(r'[\$₹]', '', value)
+        value = re.sub(r'^[a-zA-Z]+', '', value)
+        #value = re.sub(r'[^0-9.e-]', '', value.replace('$', '').replace('₹', '').replace('t', '').replace('rk', '').replace('sm', '').replace('billion', 'e9').replace('million', 'e6').replace('\u1d40', '').replace('%', ''))
         #value = str(value).lower().replace(',', '').replace('$', '').replace('₹', '').replace('t', '')..replace('rk', '').replace('sm', '').replace('\u1d40', '').replace('%', '').strip()
         # Handle 'billion' or 'million' suffixes
         if 'billion' in value:
