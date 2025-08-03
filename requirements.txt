@@ -14,3 +14,4 @@ webdriver-manager
 scikit-learn
 duckdb
 python-multipart
+lxml
