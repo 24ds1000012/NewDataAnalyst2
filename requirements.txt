@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+openai
+python-dotenv
+pandas
+numpy
+matplotlib
+json-repair
+requests
+beautifulsoup4
+certifi
+selenium
+webdriver-manager
+scikit-learn
+duckdb

@@ -1,0 +1,13 @@
+__pycache__/
+.env
+*.log
+*.pyc
+*.sqlite3
+*.db
+*.parquet
+.ipynb_checkpoints/
+.vscode/
+.env.local
+.env.*
+.idea/
+*.DS_Store.env

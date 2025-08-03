@@ -1,0 +1,8 @@
+Scrape all the Top 29 components of NIFTY stocks and get their names and current share prices from this webpage https://finance.yahoo.com/quote/%5ENSEI/components/ 
+
+
+Answer the following questions and respond with a JSON array of strings containing the answer.
+
+1. Which stocks are trading postitive today? 
+2. Which stock has gained the highest today  in terms of percentage?
+3. Which stock is down the most today in terms of percentage?
