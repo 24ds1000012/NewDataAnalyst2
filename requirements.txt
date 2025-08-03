@@ -4,7 +4,7 @@ openai
 python-dotenv
 pandas
 numpy
-matplotlib
+matplotlib==3.9.2
 json-repair
 requests
 beautifulsoup4
