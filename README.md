@@ -1,3 +1,14 @@
+---
+title: NewDataAnalyst
+emoji: 📊
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: "4.27.0"
+app_file: app.py
+pinned: false
+---
+
 # Data Analyst Agent API
 
 This is a FastAPI-based agent that uses GPT to process arbitrary data analysis questions. It supports web scraping, DuckDB over Parquet, regression analysis, and plotting.
