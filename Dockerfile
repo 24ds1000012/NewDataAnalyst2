@@ -11,6 +11,12 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user and set up permissions
+RUN useradd -m -u 1000 appuser && \
+    mkdir -p /tmp/duckdb /tmp/duckdb/extensions /tmp/matplotlib /tmp/cache/fontconfig && \
+    chown -R appuser:appuser /tmp/duckdb /tmp/matplotlib /tmp/cache && \
+    chmod -R 777 /tmp/duckdb /tmp/matplotlib /tmp/cache
+
 # Set working directory
 WORKDIR /app
 
@@ -18,9 +24,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set MPLCONFIGDIR and XDG_CACHE_HOME for Matplotlib and Fontconfig
-RUN mkdir -p /tmp/duckdb /tmp/duckdb/extensions /tmp/matplotlib /tmp/cache/fontconfig && \
-    chmod -R 777 /tmp/duckdb /tmp/matplotlib /tmp/cache
+# Set environment variables for Matplotlib, Fontconfig, and DuckDB
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/cache
 ENV DUCKDB_HOME=/tmp/duckdb
@@ -29,6 +33,9 @@ ENV DUCKDB_EXTENSION_DIR=/tmp/duckdb/extensions
 
 # Copy all other code
 COPY . .
+
+# Switch to non-root user
+USER appuser
 
 # Expose port for Hugging Face Spaces
 EXPOSE 7860
