@@ -215,7 +215,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
             "For web scraping, select the correct table by checking for relevant columns"
             "For JavaScript-rendered content, use Selenium with ChromeDriverManager to handle WebDriver setup. "
-            "For S3-based Parquet files, use DuckDB with hive_partitioning=True and limit queries to relevant subsets (e.g., LIMIT 10000 for exploration). "
+            "For S3-based Parquet files, use DuckDB with hive_partitioning=True and limit queries to relevant subsets (e.g., LIMIT 30000 for exploration). "
             "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "
             "For plots, ensure base64 string is under 100,000 bytes by using format='png', figsize=(4,3), and dpi=80; reduce DPI further if needed."
             "Assign the final output to a variable named `result` (e.g., result = [...])."
@@ -234,7 +234,7 @@ async def process_question(question: str):
                 # Data Source Handling
                 "When reading data from large remote sources (e.g., S3 Parquet paths or DuckDB queries over large partitions), avoid wildcard queries that may load excessive data. Instead, use lazy-loading patterns:"
                 "- Restrict queries to specific subsets (e.g., one year if available) to avoid excessive data loading"
-                "- Add `LIMIT` clauses (e.g., `LIMIT 10000`) during exploration."
+                "- Add `LIMIT` clauses (e.g., `LIMIT 30000`) during exploration."
                 "- Use DuckDB’s `read_parquet(..., hive_partitioning=True)` to avoid scanning all files unnecessarily."
                 "- Use `df_iter = con.execute(query).fetchdf(stream=True)` for streaming where supported."
                 "- Inspect available partitions first using `SELECT DISTINCT` on partition columns (`year`, `court`, etc.), then iterate selectively."
@@ -268,7 +268,7 @@ async def process_question(question: str):
             "content": (
                 f"Analyze and break down this task into clear steps: {question}. "
                 "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
-                "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets(e.g., LIMIT 10000 for exploration). "
+                "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets(e.g., LIMIT 30000 for exploration). "
                 "For each step, describe how to inspect and handle data dynamically (e.g., inferring column types after cleaning, handling special prefixes like 'T'). "
                 "If the question involves a specific URL, S3 path, or local file, include code to fetch the data in the first step, ensuring the correct table is selected by checking column names."
                 "For web scraping, inspect all tables, print their column headings, and select the most relevant table based on the question’s context. "
@@ -293,7 +293,7 @@ async def process_question(question: str):
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
                 "Identify the data source from the question (e.g., S3 path, URL, local file). "
-                "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets (e.g., LIMIT 10000 for exploration). "
+                "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets (e.g., LIMIT 30000 for exploration). "
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
