@@ -37,15 +37,22 @@ MAX_ATTEMPTS = 4
 def initialize_duckdb():
     duckdb_dir = os.getenv("DUCKDB_HOME", "/tmp/duckdb")
     try:
-        # Create the DuckDB directory if it doesn't exist
+        logger.info(f"Initializing DuckDB with database path: {duckdb_dir}/duckdb.db")
         os.makedirs(duckdb_dir, exist_ok=True)
-        # Initialize DuckDB connection with explicit storage path
         con = duckdb.connect(database=f"{duckdb_dir}/duckdb.db")
-        # Set temporary directory for DuckDB
         con.execute(f"SET temp_directory='{os.getenv('DUCKDB_TEMP_DIR', '/tmp/duckdb')}'")
+        con.execute("SET http_timeout=30000")  # 30 seconds timeout
+        con.execute("INSTALL httpfs; LOAD httpfs;")
+        con.execute("INSTALL parquet; LOAD parquet;")
+        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        if aws_access_key and aws_secret_key:
+            con.execute(f"SET s3_access_key_id='{aws_access_key}'")
+            con.execute(f"SET s3_secret_access_key='{aws_secret_key}'")
+        con.execute("SET s3_region='ap-south-1'")
         return con
     except Exception as e:
-        logger.error(f"Failed to initialize DuckDB: {e}")
+        logger.error(f"Failed to initialize DuckDB: {e}", exc_info=True)
         raise
 
 async def ask_gpt(messages, model="gpt-4o", temperature=0):
