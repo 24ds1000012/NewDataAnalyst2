@@ -19,7 +19,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Set MPLCONFIGDIR and XDG_CACHE_HOME for Matplotlib and Fontconfig
-RUN mkdir -p /tmp/matplotlib /tmp/cache/fontconfig && chmod -R 777 /tmp/matplotlib /tmp/cache
+RUN mkdir -p /tmp/duckdb /tmp/duckdb/extensions /tmp/matplotlib /tmp/cache/fontconfig && \
+    chmod -R 777 /tmp/duckdb /tmp/matplotlib /tmp/cache
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/cache
 ENV DUCKDB_HOME=/tmp/duckdb
