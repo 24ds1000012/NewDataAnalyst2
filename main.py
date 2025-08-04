@@ -7,7 +7,14 @@ import traceback
 import json
 from fastapi import Request
 import asyncio
-import logger
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)  # Create a logger instance
 
 app = FastAPI()
 
@@ -23,7 +30,7 @@ async def analyze(file: UploadFile = File(...)):
         logger.info(f"Received question: {question}")
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
-# Process question with timeout
+        # Process question with timeout
         result = await asyncio.wait_for(process_question(question), timeout=300.0)
         logger.info(f"Returning result: {result}")
         return JSONResponse(content=result)
