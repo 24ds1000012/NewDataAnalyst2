@@ -23,6 +23,7 @@ RUN mkdir -p /tmp/matplotlib /tmp/cache/fontconfig && chmod -R 777 /tmp/matplotl
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/cache
 ENV DUCKDB_HOME=/tmp/duckdb
+ENV DUCKDB_TEMP_DIR=/tmp/duckdb
 
 # Copy all other code
 COPY . .
