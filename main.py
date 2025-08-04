@@ -18,17 +18,18 @@ async def root():
 async def analyze(file: UploadFile = File(...)):
     try:
         question = (await file.read()).decode("utf-8")
+        logger.info(f"Received question: {question}")
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
-        result = await process_question(question)
+# Process question with timeout
+        result = await asyncio.wait_for(process_question(question), timeout=300.0)
+        logger.info(f"Returning result: {result}")
         return JSONResponse(content=result)
+    except asyncio.TimeoutError:
+        logger.error("Request timed out")
+        raise HTTPException(status_code=504, detail="Request timed out")
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Internal server error", "details": str(e)}
-        )
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=7860)
+        logger.error(f"Error processing request: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
