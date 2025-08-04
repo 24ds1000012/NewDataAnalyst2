@@ -32,6 +32,22 @@ client = OpenAI(api_key=api_key)
 
 MAX_ATTEMPTS = 4
 
+
+# Ensure DuckDB uses the correct directory
+def initialize_duckdb():
+    duckdb_dir = os.getenv("DUCKDB_HOME", "/tmp/duckdb")
+    try:
+        # Create the DuckDB directory if it doesn't exist
+        os.makedirs(duckdb_dir, exist_ok=True)
+        # Initialize DuckDB connection with explicit storage path
+        con = duckdb.connect(database=f"{duckdb_dir}/duckdb.db")
+        # Set temporary directory for DuckDB
+        con.execute(f"SET temp_directory='{os.getenv('DUCKDB_TEMP_DIR', '/tmp/duckdb')}'")
+        return con
+    except Exception as e:
+        logger.error(f"Failed to initialize DuckDB: {e}")
+        raise
+
 async def ask_gpt(messages, model="gpt-4o", temperature=0):
     try:
         response = client.chat.completions.create(
@@ -47,10 +63,14 @@ async def ask_gpt(messages, model="gpt-4o", temperature=0):
 def extract_code_blocks(response):
     return re.findall(r"```python(.*?)```", response, re.DOTALL)
 
+# Example usage in safe_execute or generated code
 def safe_execute(code_blocks, global_vars):
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}")
+            # Ensure DuckDB is initialized before executing code
+            if 'duckdb' in code:
+                global_vars['con'] = initialize_duckdb()
             exec(code.strip(), global_vars)
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
