@@ -15,4 +15,4 @@ scikit-learn
 duckdb>=0.10.0
 python-multipart
 lxml
-logger
+logging
