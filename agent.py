@@ -158,6 +158,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nThe DuckDB function 'julianday' is not available. Instead, load date columns into a pandas DataFrame and calculate date differences using "
             "pd.to_datetime() and .dt.days (e.g., (pd.to_datetime(df['date2']) - pd.to_datetime(df['date1'])).dt.days)."
         )
+    if "failed to create directory" in error_message.lower() or "permission denied" in error_message.lower():
+    error_guidance += (
+        "\nDuckDB failed to create a directory due to permission issues. "
+        "Use os.makedirs(os.getenv('DUCKDB_HOME', '/tmp/duckdb'), exist_ok=True) to create the DuckDB directory. "
+        "Initialize DuckDB with an explicit database path: duckdb.connect(database=os.path.join(os.getenv('DUCKDB_HOME', '/tmp/duckdb'), 'duckdb.db')). "
+        "Set the DuckDB temp_directory to os.getenv('DUCKDB_TEMP_DIR', '/tmp/duckdb') using con.execute('SET temp_directory=...')."
+    )
 
     messages.append({
         "role": "user",
