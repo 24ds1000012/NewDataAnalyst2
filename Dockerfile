@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /tmp/matplotlib /tmp/cache/fontconfig && chmod -R 777 /tmp/matplotlib /tmp/cache
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/cache
+ENV DUCKDB_HOME=/tmp/duckdb
 
 # Copy all other code
 COPY . .
