@@ -12,6 +12,6 @@ certifi
 selenium
 webdriver-manager
 scikit-learn
-duckdb
+duckdb>=0.10.0
 python-multipart
 lxml
