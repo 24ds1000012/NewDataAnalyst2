@@ -30,6 +30,7 @@ ENV XDG_CACHE_HOME=/tmp/cache
 ENV DUCKDB_HOME=/tmp/duckdb
 ENV DUCKDB_TEMP_DIR=/tmp/duckdb
 ENV DUCKDB_EXTENSION_DIR=/tmp/duckdb/extensions
+ENV PYTHONUNBUFFERED=1
 
 # Copy all other code
 COPY . .
