@@ -79,6 +79,14 @@ def safe_execute(code_blocks, global_vars):
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
             exec(code.strip(), global_vars)
+            if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
+                if global_vars['df'].empty:
+                    logger.error("DataFrame is empty after loading.")
+                    return False, "Empty DataFrame loaded."
+                logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
+            else:
+                logger.error("No DataFrame created.")
+                return False, "No DataFrame created."
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
