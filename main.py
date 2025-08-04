@@ -7,6 +7,7 @@ import traceback
 import json
 from fastapi import Request
 import asyncio
+import logger
 
 app = FastAPI()
 
