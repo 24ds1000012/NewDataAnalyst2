@@ -495,7 +495,7 @@ async def process_question(question: str):
                 "For remote files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile."
                 "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets. "
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
-                "Use the correct import: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). 
+                "Use the correct import: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
                 "Extract data using regular expressions or table parsing to answer the question’s requirements."
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
