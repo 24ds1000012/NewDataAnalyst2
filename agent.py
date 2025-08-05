@@ -72,6 +72,7 @@ def extract_code_blocks(response):
 
 # Example usage in safe_execute or generated code
 async def safe_execute(code_blocks, global_vars):
+    from selenium.webdriver.chrome.service import Service  # Add this import
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
