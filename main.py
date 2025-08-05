@@ -23,7 +23,7 @@ async def root():
     return {"status": "Running"}
 
 @app.post("/api/")
-async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachments: list[UploadFile] = File(None)):
+async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachments: list[UploadFile] = File(None, alias="attachments")):
     temp_file_paths = []
     try:
        
