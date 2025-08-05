@@ -81,22 +81,23 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['con'] = initialize_duckdb()
             # Configure Selenium with compatible ChromeDriver
             if 'webdriver' in code:
-                options = webdriver.ChromeOptions()
+                options = Options()
                 options.add_argument('--headless')
                 options.add_argument('--no-sandbox')
                 options.add_argument('--disable-dev-shm-usage')
-                # Ensure latest ChromeDriver
-                service = Service(ChromeDriverManager().install())
+                # Use Chromium explicitly
+                options.binary_location = '/usr/bin/chromium'
+                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
                 global_vars['webdriver'] = webdriver
                 global_vars['Service'] = Service
                 global_vars['ChromeDriverManager'] = ChromeDriverManager
+                global_vars['ChromeType'] = ChromeType
                 global_vars['By'] = By
                 global_vars['WebDriverWait'] = WebDriverWait
                 global_vars['EC'] = EC
                 global_vars['options'] = options
                 global_vars['service'] = service
-                # Set default timeout for WebDriverWait
-                global_vars['default_timeout'] = 20  # Seconds
+                global_vars['default_timeout'] = 20
             # Handle async code (e.g., for future Playwright integration)
             if 'async' in code or 'await' in code:
                 import asyncio
