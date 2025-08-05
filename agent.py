@@ -401,11 +401,25 @@ async def process_question(question: str):
     step_attempt = 0
     while step_attempt < MAX_ATTEMPTS:
         step_attempt += 1
+
+        # Extract file path from question if it contains attachment details
+        file_path = None
+        if "Attachments:" in question:
+            try:
+                attachment_line = [line for line in question.split('\n') if line.startswith("Attachments:")][0]
+                attachment_details = [line for line in question.split('\n') if line.strip() and not line.startswith("Attachments:")][0]
+                file_path = attachment_details.split(": ")[1].strip()
+                logger.info(f"Extracted file path: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to extract file path from question: {e}")
+                return {"error": "Failed to extract file path", "details": str(e)}
+                
         messages.append({
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
                 "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
+                f"Use the file path: {file_path if file_path else '/tmp/example.pdf'} for processing. "
                 "If the question includes 'Attachments: filename: /tmp/...', process each file based on its type: "
                 "- For PDFs, use pdfplumber.open(file_path) to extract text or tables; use pytesseract.image_to_string(page.to_image().original) for image-based PDFs. "
                 "- For Excel files, use pandas.read_excel(file_path). "
