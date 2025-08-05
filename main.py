@@ -24,7 +24,9 @@ async def root():
 
 @app.post("/api/")
 async def analyze(questions_txt: UploadFile = File(..., alias="file"),
-                  attachments: list[UploadFile] = File(None, alias="attachments")):
+                  attachments: list[UploadFile] = File(None, alias="attachments"),
+                  **extra_form_data: UploadFile
+):
     temp_file_paths = []
     try:
        
