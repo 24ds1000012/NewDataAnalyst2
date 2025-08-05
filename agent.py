@@ -375,9 +375,8 @@ async def process_question(question: str):
         }
     ]
 
-    # File Path Extraction
+# File Path Extraction
     file_path = None
-    logger.info(f"Raw question string:\n{question}")
     if "Attachments:" in question:
         try:
             # Split question into lines and find attachment section
@@ -417,14 +416,14 @@ async def process_question(question: str):
             logger.error(f"Failed to extract file path from question: {e}")
             return {"error": "Failed to extract file path", "details": str(e)}
     else:
-        logger.error("No 'Attachments:' section found in question")
-        return {"error": "No attachments specified", "details": "Question does not contain 'Attachments:' section"}
+        logger.info("No attachments specified; proceeding with question processing")
         
 # Step 1: Task Breakdown
     messages.append({
             "role": "user",
             "content": (
                 f"Analyze and break down this task into clear steps: {question}. "
+                f"{'The question includes an attachment with file path: ' + file_path if file_path else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
                 "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
                 "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
                 "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
@@ -453,9 +452,8 @@ async def process_question(question: str):
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
+                f"{'The question specifies a PDF OR Excel or Word file at path: ' + file_path if file_path else 'No attachments provided; check for inline data in the question or external sources (e.g., web scraping based on URLs or keywords).'} "
                 "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
-                f"Use the file path: {file_path if file_path else '/tmp/example.pdf'} for processing. "
-                "If the question includes 'Attachments: filename: /tmp/...', process each file based on its type: "
                 "- For PDFs, use pdfplumber.open(file_path) to extract text or tables; use pytesseract.image_to_string(page.to_image().original) for image-based PDFs. "
                 "- For Excel files, use pandas.read_excel(file_path). "
                 "- For CSV files, use pandas.read_csv(file_path). "
