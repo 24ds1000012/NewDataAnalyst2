@@ -47,6 +47,7 @@ async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachmen
             question += "\nAttachments:\n" + "\n".join([f"{filename}: {path}" for filename, path in temp_file_paths])
 
         # Process the question
+        logger.info(f"Total question plus attachment: {question}")
         result = await asyncio.wait_for(process_question(question), timeout=300.0)
         logger.info(f"Returning result: {result}")
         return JSONResponse(content=result)
