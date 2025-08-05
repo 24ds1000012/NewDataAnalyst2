@@ -71,10 +71,10 @@ def extract_code_blocks(response):
     return re.findall(r"```python(.*?)```", response, re.DOTALL)
 
 # Example usage in safe_execute or generated code
-def safe_execute(code_blocks, global_vars):
+async def safe_execute(code_blocks, global_vars):
     for idx, code in enumerate(code_blocks):
         try:
-            logger.info(f"Executing block {idx + 1}")
+            logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
             # Ensure DuckDB is initialized before executing code
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
@@ -94,7 +94,17 @@ def safe_execute(code_blocks, global_vars):
                 global_vars['EC'] = EC
                 global_vars['options'] = options
                 global_vars['service'] = service
-            exec(code.strip(), global_vars)
+                # Set default timeout for WebDriverWait
+                global_vars['default_timeout'] = 20  # Seconds
+            # Handle async code (e.g., for future Playwright integration)
+            if 'async' in code or 'await' in code:
+                import asyncio
+                async def run_async_code():
+                    exec(code.strip(), global_vars)
+                await asyncio.run(run_async_code())
+            else:
+                exec(code.strip(), global_vars)
+            # Validate DataFrame
             if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
                 if global_vars['df'].empty:
                     logger.error("DataFrame is empty after loading.")
@@ -106,6 +116,14 @@ def safe_execute(code_blocks, global_vars):
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
+        finally:
+            # Clean up Selenium driver if created
+            if 'driver' in global_vars and isinstance(global_vars['driver'], webdriver.Chrome):
+                try:
+                    global_vars['driver'].quit()
+                    logger.info("Selenium driver closed.")
+                except Exception as e:
+                    logger.warning(f"Failed to close Selenium driver: {e}")
     return True, None
 
 def clean_numeric_value(value):
@@ -225,6 +243,11 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Initialize the model variable (e.g., model = None) before any conditional blocks. "
             "In plotting code, check if the model exists before calling predict (e.g., if model is not None: plt.plot(...)). "
             "Use a fallback (e.g., flat line with plt.axhline) if the model cannot be computed due to insufficient data."
+        )
+    if "name 'Service' is not defined" in error_message.lower():
+        error_guidance += (
+            "\nThe 'Service' class from selenium.webdriver.chrome.service is missing. "
+            "Ensure it is imported and added to global_vars in the safe_execute function."
         )
 
     messages.append({
