@@ -23,25 +23,25 @@ async def root():
     return {"status": "Running"}
 
 @app.post("/api/")
-async def analyze(questions_txt: UploadFile = File(..., alias="file"),
-                  attachments: list[UploadFile] = File(None, alias="attachments"),
-                  **extra_form_data: UploadFile
+async def analyze(
+    questions_txt: UploadFile = File(..., alias="file"),
+    attachments: list[UploadFile] = File(None, alias="attachments"),
+    **extra_form_data: UploadFile
 ):
     temp_file_paths = []
     try:
-       
         # Read the question file
         question = (await questions_txt.read()).decode("utf-8")
         logger.info(f"Received question: {question}")
         if not question.strip():
-            raise HTTPException(status_code=400, detail="Question cannot be empty")
+            raise HTTPException(status_code=400, detail="Question file cannot be empty or contain only whitespace")
 
-# Collect all attachments from 'attachments' field and any other form fields
+        # Collect all attachments from 'attachments' field and any other form fields
         all_attachments = []
         if attachments:
             all_attachments.extend(attachments)
             logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
-        
+
         # Check for additional form fields that contain UploadFile instances
         for field_name, field_value in extra_form_data.items():
             if isinstance(field_value, UploadFile):
@@ -93,4 +93,3 @@ async def analyze(questions_txt: UploadFile = File(..., alias="file"),
                     logger.info(f"Deleted temporary file: {temp_path}")
             except Exception as e:
                 logger.warning(f"Failed to delete temporary file {temp_path}: {e}")
-
