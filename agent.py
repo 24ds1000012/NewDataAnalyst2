@@ -149,8 +149,9 @@ def clean_numeric_value(value):
         return float(value)
     try:
         value = str(value).lower().strip()
-        value = re.sub(r'[\$₹€]', '', value)
-        value = re.sub(r'^[a-zA-Z]+', '', value)
+        value = re.sub(r'[\$₹€%]', '', value)
+        #value = re.sub(r'^[a-zA-Z]+', '', value)
+        #value = re.sub(r'[^\d.e-]', '', value)
         #value = re.sub(r'[^0-9.e-]', '', value.replace('$', '').replace('₹', '').replace('t', '').replace('rk', '').replace('sm', '').replace('billion', 'e9').replace('million', 'e6').replace('\u1d40', '').replace('%', ''))
         #value = str(value).lower().replace(',', '').replace('$', '').replace('₹', '').replace('t', '')..replace('rk', '').replace('sm', '').replace('\u1d40', '').replace('%', '').strip()
         # Handle 'billion' or 'million' suffixes
@@ -170,15 +171,16 @@ def clean_numeric_value(value):
 def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
     for col in df.columns:
-        sample = df[col].dropna().head(5)
-        if len(sample) == 0:
+        sample = df[col].dropna().head(10)
+        if len(sample) < 2:  # Handle nearly empty columns
             categorical_cols.append(col)
+            logger.warning(f"Column '{col}' has insufficient data for type inference; defaulting to categorical.")
             continue
         
         # Check for numeric content without cleaning
         try:
             numeric_sample = pd.to_numeric(sample, errors='coerce')
-            if numeric_sample.notna().sum() >= len(sample) * 0.8:  # Allow 20% NaN tolerance
+            if numeric_sample.notna().sum() >= len(sample) * 0.7:  # Allow 30% NaN tolerance
                 numeric_cols.append(col)
                 continue
         except:
@@ -187,19 +189,20 @@ def infer_column_types(df):
         # Check for temporal content with flexible parsing
         try:
             temporal_sample = pd.to_datetime(sample, errors='coerce', infer_datetime_format=True)
-            if temporal_sample.notna().sum() >= len(sample) * 0.8:
+            if temporal_sample.notna().sum() >= len(sample) * 0.7:
                 temporal_cols.append(col)
                 continue
         except:
             pass
         
-        # Analyze character composition for categorical columns
+        # Classify as categorical based on unique values or string content
+        unique_count = df[col].nunique()
         sample_str = ' '.join(sample.astype(str))
         has_punctuation = any(c in sample_str for c in ['.', '_', '-', ':', '/'])
         alpha_count = sum(c.isalpha() for c in sample_str)
         digit_count = sum(c.isdigit() for c in sample_str)
         # Classify as categorical if it has punctuation or more alphabetic characters
-        if has_punctuation or alpha_count >= digit_count:
+        if has_punctuation or alpha_count > digit_count or unique_count < len(df) * 0.5:
             categorical_cols.append(col)
         else:
             categorical_cols.append(col)  # Default to categorical for safety
@@ -305,6 +308,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nThe 'pytesseract' module is missing. Ensure it is installed and imported correctly. "
             "Add 'import pytesseract' to the code and include 'pytesseract' in global_vars if used."
+        )
+    if "Can only use .str accessor with string values" in error_message:
+        error_guidance += (
+            "\nThe .str accessor was used on a non-string column. "
+            "Before applying .str methods, check column dtypes using df.dtypes and ensure the column is of object or string type. "
+            "Use df[col].astype(str) only when necessary, and apply cleaning only to columns identified as numeric by infer_column_types. "
+            "Log the column name and sample values to identify problematic data."
         )
 
     messages.append({
