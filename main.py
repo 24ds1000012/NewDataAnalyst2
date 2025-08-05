@@ -24,6 +24,7 @@ async def root():
 
 @app.post("/api/")
 async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachments: list[UploadFile] = File(None)):
+    temp_file_paths = []
     try:
        
         # Read the question file
@@ -33,7 +34,7 @@ async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachmen
             raise HTTPException(status_code=400, detail="Question cannot be empty")
 
         # Handle attachments
-        temp_file_paths = []
+
         if attachments:
             for attachment in attachments:
                 # Save each attachment to a temporary file
