@@ -23,13 +23,14 @@ from webdriver_manager.core.os_manager import ChromeType
 from sklearn.linear_model import LinearRegression
 import duckdb
 import pdfplumber  # Added for PDF processing
+import tempfile
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-api_key = os.getenv("OPEN_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
 MAX_ATTEMPTS = 4
@@ -103,6 +104,11 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['default_timeout'] = 20
             if 'pdfplumber' in code:
                 global_vars['pdfplumber'] = pdfplumber  # Add pdfplumber to global_vars
+            # In safe_execute function, after existing global_vars assignments
+            if 'tempfile' in code:
+                global_vars['tempfile'] = tempfile
+            if 'certifi' in code:
+                global_vars['certifi'] = certifi
             # Handle async code (e.g., for future Playwright integration)
             if 'async' in code or 'await' in code:
                 import asyncio
@@ -149,6 +155,8 @@ def clean_numeric_value(value):
             value = float(re.sub(r'[^\d.e-]', '', value.replace('billion', ''))) * 1e9
         elif 'million' in value:
             value = float(re.sub(r'[^\d.e-]', '', value.replace('million', ''))) * 1e6
+        elif 'crore' in value:
+            return float(re.sub(r'[^\d.e-]', '', value.replace('crore', ''))) * 1e7
         else:
             # Remove non-numeric suffixes like 'RK'
             value = re.sub(r'[^\d.e-]', '', value)
@@ -195,67 +203,6 @@ def infer_column_types(df):
     
     return numeric_cols, categorical_cols, temporal_cols
     
-"""
-def infer_column_types(df, question_context=None):
-    numeric_cols, categorical_cols, temporal_cols = [], [], []
-    date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d', '%Y']
-    for col in df.columns:
-        sample = df[col].dropna().head(5)
-        if len(sample) == 0:
-            categorical_cols.append(col)
-            continue
-        # Check character composition for alphabetic vs numeric
-        sample_str = ' '.join(sample.astype(str))
-        alpha_count = sum(c.isalpha() for c in sample_str)
-        digit_count = sum(c.isdigit() for c in sample_str)
-        # If more alphabetic characters than numeric, treat as categorical
-        if alpha_count > digit_count:
-            categorical_cols.append(col)
-            continue
-        # Try cleaning as numeric
-        cleaned = sample.apply(clean_numeric_value)
-        if cleaned.dropna().count() >= len(sample) * 0.7:
-            numeric_cols.append(col)
-            continue
-        # Try as datetime
-        is_temporal = False
-        for date_format in date_formats:
-            try:
-                pd.to_datetime(sample, format=date_format, errors='raise')
-                temporal_cols.append(col)
-                is_temporal = True
-                break
-            except:
-                continue
-        if not is_temporal:
-            categorical_cols.append(col)
-    return numeric_cols, categorical_cols, temporal_cols
-"""
-"""
-def infer_column_types(df):
-    numeric_cols, categorical_cols, temporal_cols = [], [], []
-    date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d']
-    for col in df.columns:
-        sample = df[col].dropna().head(5)
-        if len(sample) == 0:
-            categorical_cols.append(col)
-            continue
-        # Try cleaning as numeric
-        cleaned = sample.apply(clean_numeric_value)
-        if cleaned.dropna().count() >= len(sample) * 0.5:
-            numeric_cols.append(col)
-            continue
-        # Try as datetime
-        try:
-                pd.to_datetime(sample, format=date_format, errors='raise')
-                temporal_cols.append(col)
-                is_temporal = True
-                break
-        except:
-            categorical_cols.append(col)
-    return numeric_cols, categorical_cols, temporal_cols
-"""
-
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
     error_guidance = error_message
@@ -396,6 +343,11 @@ async def process_question(question: str):
                 "If multiple tables match, select the one with the most relevant columns or the most rows.  "
                 "If no table matches, log a warning and use a fallback (e.g., `selenium` for JavaScript-rendered content). "
                 "Handle cases where tables are missing or dynamically loaded by suggesting fallback approaches (e.g., using `selenium` for JavaScript-rendered content)."
+                # PDF Processing
+                "For PDF files, check if the source is a local file or a URL. For local files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). For URLs, download the PDF using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
+                "Use pdfplumber to extract text or tables. First try extracting text with page.extract_text(). If no data is found, try extracting tables with page.extract_tables(). "
+                "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
+                "For questions requiring a JSON array of strings, ensure the output is formatted as strings (e.g., ['Infosys', '123.45', '456.78'])."
                 # Data Cleaning
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
                 "Preserve categorical columns (e.g., 'title', 'name'). Convert temporal columns to datetime, handling various formats. Drop rows with missing critical data. "
@@ -418,6 +370,8 @@ async def process_question(question: str):
                 f"Analyze and break down this task into clear steps: {question}. "
                 "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
                 "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
+                "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
+                "For remote PDF files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
                 "For each step, describe how to inspect and handle data dynamically (e.g., inferring column types after cleaning, handling special prefixes like 'T'). "
                 "If the question involves a specific URL, S3 path, or local file, include code to fetch the data in the first step, ensuring the correct table is selected by checking column names."
                 "For web scraping, inspect all tables, print their column headings, and select the most relevant table based on the question’s context. "
@@ -444,6 +398,8 @@ async def process_question(question: str):
                 "Identify the data source from the question (e.g., S3 path, URL, local file). "
                 "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets. "
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
+                "Download the PDF oe excel using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save it to a temporary file with tempfile.NamedTemporaryFile. "
+                "Use pdfplumber to extract text or tables from the PDF. 
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
                 "Clean numeric columns by removing non-numeric characters, prefixes (e.g., 'T'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
