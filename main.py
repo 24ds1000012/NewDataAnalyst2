@@ -57,8 +57,9 @@ async def analyze(
             all_attachments.extend(attachments)
             logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
 
-        # Check all form fields for UploadFile instances, excluding question file fields
+        # Check all form fields for UploadFile instances
         for field_name, field_value in form.items():
+            logger.debug(f"Processing field '{field_name}': type={type(field_value)}")
             if field_name in ["file", "questions.txt"]:  # Skip question file fields
                 continue
             if isinstance(field_value, UploadFile):
@@ -68,7 +69,7 @@ async def analyze(
                 all_attachments.extend(field_value)
                 logger.info(f"Received attachments via '{field_name}' field: {[item.filename for item in field_value]}")
             else:
-                logger.debug(f"Field '{field_name}' is not an UploadFile: {type(field_value)}")
+                logger.warning(f"Field '{field_name}' is not an UploadFile or list of UploadFiles: type={type(field_value)}")
 
         if all_attachments:
             logger.info(f"Total attachments received: {[attachment.filename for attachment in all_attachments]}")
