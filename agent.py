@@ -22,6 +22,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
 from sklearn.linear_model import LinearRegression
 import duckdb
+import pdfplumber  # Added for PDF processing
 
 load_dotenv()
 
@@ -100,6 +101,8 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['options'] = options
                 global_vars['service'] = service
                 global_vars['default_timeout'] = 20
+            if 'pdfplumber' in code:
+                global_vars['pdfplumber'] = pdfplumber  # Add pdfplumber to global_vars
             # Handle async code (e.g., for future Playwright integration)
             if 'async' in code or 'await' in code:
                 import asyncio
@@ -342,6 +345,11 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nThe 'Service' class from selenium.webdriver.chrome.service is missing. "
             "Ensure it is imported and added to global_vars in the safe_execute function."
+        )
+    if "no module named 'pdfplumber'" in error_message.lower():
+        error_guidance += (
+            "\nThe 'pdfplumber' module is missing. Ensure it is installed and imported correctly. "
+            "Add 'import pdfplumber' to the code and include 'pdfplumber' in global_vars if used."
         )
 
     messages.append({
