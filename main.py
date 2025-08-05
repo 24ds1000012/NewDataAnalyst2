@@ -25,8 +25,8 @@ async def root():
 @app.post("/api/")
 async def analyze(
     request: Request,
-    questions_txt: UploadFile = File(None, alias="file"),  # Make 'file' optional
-    questions_txt_alt: UploadFile = File(None, alias="questions.txt"),  # Add support for 'questions.txt'
+    questions_txt: UploadFile = File(None, alias="file"),  # Optional 'file' field
+    questions_txt_alt: UploadFile = File(None, alias="questions.txt"),  # Optional 'questions.txt' field
     attachments: list[UploadFile] = File(None, alias="attachments")
 ):
     temp_file_paths = []
@@ -49,6 +49,9 @@ async def analyze(
         form = await request.form()
         all_attachments = []
         
+        # Log all form fields for debugging
+        logger.info(f"All form fields received: {list(form.keys())}")
+
         # Include attachments from the 'attachments' field
         if attachments:
             all_attachments.extend(attachments)
@@ -64,6 +67,8 @@ async def analyze(
             elif isinstance(field_value, list) and all(isinstance(item, UploadFile) for item in field_value):
                 all_attachments.extend(field_value)
                 logger.info(f"Received attachments via '{field_name}' field: {[item.filename for item in field_value]}")
+            else:
+                logger.debug(f"Field '{field_name}' is not an UploadFile: {type(field_value)}")
 
         if all_attachments:
             logger.info(f"Total attachments received: {[attachment.filename for attachment in all_attachments]}")
