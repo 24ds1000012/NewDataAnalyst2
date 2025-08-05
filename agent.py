@@ -24,6 +24,7 @@ from sklearn.linear_model import LinearRegression
 import duckdb
 import pdfplumber  # Added for PDF processing
 import tempfile
+import pytesseract  # Added for image processing
 
 load_dotenv()
 
@@ -109,6 +110,8 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['tempfile'] = tempfile
             if 'certifi' in code:
                 global_vars['certifi'] = certifi
+            if 'pytesseract' in code:
+                global_vars['pytesseract'] = pytesseract  # Add pytesseract to global_vars
             # Handle async code (e.g., for future Playwright integration)
             if 'async' in code or 'await' in code:
                 import asyncio
@@ -298,6 +301,11 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nThe 'pdfplumber' module is missing. Ensure it is installed and imported correctly. "
             "Add 'import pdfplumber' to the code and include 'pdfplumber' in global_vars if used."
         )
+    if "no module named 'pytesseract'" in error_message.lower():
+        error_guidance += (
+            "\nThe 'pytesseract' module is missing. Ensure it is installed and imported correctly. "
+            "Add 'import pytesseract' to the code and include 'pytesseract' in global_vars if used."
+        )
 
     messages.append({
         "role": "user",
@@ -343,11 +351,13 @@ async def process_question(question: str):
                 "If multiple tables match, select the one with the most relevant columns or the most rows.  "
                 "If no table matches, log a warning and use a fallback (e.g., `selenium` for JavaScript-rendered content). "
                 "Handle cases where tables are missing or dynamically loaded by suggesting fallback approaches (e.g., using `selenium` for JavaScript-rendered content)."
-                # PDF Processing
-                "For PDF files, check if the source is a local file or a URL. For local files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). For URLs, download the PDF using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
-                "Use pdfplumber to extract text or tables. First try extracting text with page.extract_text(). If no data is found, try extracting tables with page.extract_tables(). "
+                # File Processing
+                "For PDF files, read using pdfplumber.open(file_path). Try extracting text with page.extract_text(). If no text is found, try OCR with pytesseract.image_to_string(page.to_image().original) for image-based PDFs, then extract tables with page.extract_tables(). "
+                "For Excel files, read using pandas.read_excel(file_path). "
+                "For CSV files, read using pandas.read_csv(file_path). "
+                "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
                 "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
-                "For questions requiring a JSON array of strings, ensure the output is formatted as strings (e.g., ['Infosys', '123.45', '456.78'])."
+                #"For questions requiring a JSON array of strings, ensure the output is formatted as strings .
                 # Data Cleaning
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
                 "Preserve categorical columns (e.g., 'title', 'name'). Convert temporal columns to datetime, handling various formats. Drop rows with missing critical data. "
@@ -395,11 +405,17 @@ async def process_question(question: str):
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
-                "Identify the data source from the question (e.g., S3 path, URL, local file). "
+                "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
+                "If the question includes 'Attachments: filename: /tmp/...', process each file based on its type: "
+                "- For PDFs, use pdfplumber.open(file_path) to extract text or tables; use pytesseract.image_to_string(page.to_image().original) for image-based PDFs. "
+                "- For Excel files, use pandas.read_excel(file_path). "
+                "- For CSV files, use pandas.read_csv(file_path). "
+                "- For images (PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
+                "Verify each file is accessible before processing. If a file cannot be accessed, log an error and skip it. "
+                "For remote files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile.
                 "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets. "
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
-                "Download the PDF oe excel using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save it to a temporary file with tempfile.NamedTemporaryFile. "
-                "Use pdfplumber to extract text or tables from the PDF. "
+                "Extract data using regular expressions or table parsing to answer the question’s requirements."
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
                 "Clean numeric columns by removing non-numeric characters, prefixes (e.g., 'T'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
