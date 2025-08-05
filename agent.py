@@ -88,7 +88,7 @@ async def safe_execute(code_blocks, global_vars):
                 options.add_argument('--disable-dev-shm-usage')
                 # Use Chromium explicitly
                 options.binary_location = '/usr/bin/chromium'
-                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM, version="138.0.7204.183").install())
                 global_vars['webdriver'] = webdriver
                 global_vars['Service'] = Service
                 global_vars['ChromeDriverManager'] = ChromeDriverManager
