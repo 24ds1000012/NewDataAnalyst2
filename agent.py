@@ -27,6 +27,7 @@ import tempfile
 import pytesseract  # Added for image processing
 import tenacity
 from selenium.common.exceptions import WebDriverException
+from fuzzywuzzy import fuzz
 
 load_dotenv()
 
@@ -84,7 +85,7 @@ async def safe_execute(code_blocks, global_vars):
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(3),
         wait=tenacity.wait_fixed(2),
-        retry=tenacity.retry_if_exception_type(WebDriverException),
+        retry=tenacity.retry_if_exception_type((WebDriverException, TimeoutException)),
         reraise=True
     )
     def init_selenium():
@@ -97,25 +98,17 @@ async def safe_execute(code_blocks, global_vars):
         options.binary_location = '/usr/bin/chromium'
         # Use ChromeDriverManager to match the installed Chromium version
         service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+        driver = webdriver.Chrome(service=service, options=options)
         logger.info("Selenium WebDriver initialized successfully.")
-        return options, service
+        return driver
     
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
-            # Ensure DuckDB is initialized before executing code
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
-            # Configure Selenium with compatible ChromeDriver
             if 'webdriver' in code:
-                options = Options()
-                options.add_argument('--headless')
-                options.add_argument('--no-sandbox')
-                options.add_argument('--disable-dev-shm-usage')
-                # Use Chromium explicitly
-                options.binary_location = '/usr/bin/chromium'
-                # Auto-detect ChromeDriver version
-                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+                driver = init_selenium()
                 global_vars['webdriver'] = webdriver
                 global_vars['Service'] = Service
                 global_vars['ChromeDriverManager'] = ChromeDriverManager
@@ -123,18 +116,18 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['By'] = By
                 global_vars['WebDriverWait'] = WebDriverWait
                 global_vars['EC'] = EC
-                global_vars['options'] = options
-                global_vars['service'] = service
-                global_vars['default_timeout'] = 20
+                global_vars['driver'] = driver
+                global_vars['default_timeout'] = 30
             if 'pdfplumber' in code:
-                global_vars['pdfplumber'] = pdfplumber  # Add pdfplumber to global_vars
-            # In safe_execute function, after existing global_vars assignments
+                global_vars['pdfplumber'] = pdfplumber
             if 'tempfile' in code:
                 global_vars['tempfile'] = tempfile
             if 'certifi' in code:
                 global_vars['certifi'] = certifi
             if 'pytesseract' in code:
-                global_vars['pytesseract'] = pytesseract  # Add pytesseract to global_vars
+                global_vars['pytesseract'] = pytesseract
+            if 'fuzz' in code:
+                global_vars['fuzz'] = fuzz
             # Handle async code (e.g., for future Playwright integration)
             if 'async' in code or 'await' in code:
                 import asyncio
@@ -295,6 +288,8 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "column" in error_message.lower() or "key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
+            "Do not assume specific column names like 'Name'. Use fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to find columns like 'Company Name', 'Symbol' for identifiers, or '% Change', 'Change' for numeric metrics. "
+            "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
         )
     if "julianday does not exist" in error_message.lower():
@@ -344,6 +339,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         "content": (
             f"The previous {stage} failed with this error:\n\n{error_guidance}\n\n"
             "Regenerate the {stage}. Inspect the DataFrame's columns, dtypes, and sample data (first 5 rows) and print them for debugging. "
+            "Do not assume specific column names. Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on keywords from the question (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Select columns based on question context and data types (numeric for metrics, categorical for identifiers, temporal for dates). "
             "Identify numeric, categorical, and temporal columns dynamically after cleaning data. "
             "Preserve categorical columns like 'Name', 'Symbol'. "
@@ -378,8 +374,7 @@ async def process_question(question: str):
                 # Web Scraping and Table Selection
                 "For web scraping, fetch all tables from the specified URL using `requests` with `certifi` for SSL verification and `pandas.read_html` with `StringIO`. If no tables are found, fall back to Selenium with ChromeDriverManager to render JavaScript content. "
                 "Inspect all tables and their column headings. Print the number of tables found and the column headings for each table to aid debugging. "
-                "Select the most relevant table based on the question’s context by matching column names to keywords relevant to the question (e.g., for a stock price question, prioritize columns like 'Price', 'Change', '% Change', 'Symbol', 'Name', or synonyms) or (e.g., for a film gross question, prioritize columns like 'Title', 'Worldwide gross', 'Year', 'Rank', 'Peak').  "
-                "If exact column names are unknown, use the question’s context and data types (e.g., categorical for names, numeric for prices or changes) to select columns. "
+                "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select the most relevant table and columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
                 "If multiple tables match, select the one with the most relevant columns or the most rows.  "
                 "If no table matches, log a warning and use a fallback (e.g., `selenium` for JavaScript-rendered content). "
                 "Handle cases where tables are missing or dynamically loaded by suggesting fallback approaches (e.g., using `selenium` for JavaScript-rendered content)."
@@ -465,6 +460,8 @@ async def process_question(question: str):
                 "If the question involves a specific URL, S3 path, or local file, include code to fetch the data in the first step, ensuring the correct table is selected by checking column names."
                 "For web scraping, inspect all tables, print their column headings, and select the most relevant table based on the question’s context. "
                 "If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables. "
+                "Inspect all tables, print their column headings, and select the most relevant table based on the question’s context." 
+                "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "                
                 "Describe how to clean and analyze data dynamically, selecting columns based on context and data types."
             )
         }
@@ -497,6 +494,7 @@ async def process_question(question: str):
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
                 "Use the correct import: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
                 "Extract data using regular expressions or table parsing to answer the question’s requirements."
+                "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
                 "Clean numeric columns by removing non-numeric characters, prefixes (e.g., 'T'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
@@ -545,6 +543,7 @@ async def process_question(question: str):
         "content": (
             f"The dataframe metadata is:\n{metadata_info}\n\n"
             "Generate Python code to answer the question. Use the preprocessed DataFrame `df`."
+            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Inspect columns and infer types (numeric, categorical, temporal) using `infer_column_types`. "
             "Select columns based on question context"
             "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data. "
