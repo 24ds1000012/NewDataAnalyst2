@@ -10,7 +10,7 @@ requests
 beautifulsoup4
 certifi
 selenium
-webdriver-manager
+webdriver-manager>=4.0.2
 scikit-learn
 duckdb>=0.10.0
 python-multipart
