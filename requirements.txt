@@ -23,3 +23,5 @@ transformers==4.46.1   # Added for potential model usage
 openpyxl==3.1.5      # For Excel support
 pytesseract==0.3.13  # For OCR support
 tenacity==8.2.3
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.26.0
