@@ -88,7 +88,8 @@ async def safe_execute(code_blocks, global_vars):
                 options.add_argument('--disable-dev-shm-usage')
                 # Use Chromium explicitly
                 options.binary_location = '/usr/bin/chromium'
-                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM, version="138.0.7204.183").install())
+                # Auto-detect ChromeDriver version
+                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
                 global_vars['webdriver'] = webdriver
                 global_vars['Service'] = Service
                 global_vars['ChromeDriverManager'] = ChromeDriverManager
@@ -298,6 +299,15 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nSelenium failed due to a ChromeDriver version mismatch. Use ChromeDriverManager(chrome_type=ChromeType.CHROMIUM) to automatically match the installed Chromium version (e.g., /usr/bin/chromium). "
             "Set options.binary_location='/usr/bin/chromium' in Selenium options."
+        )
+    if "ChromeDriverManager.__init__() got an unexpected keyword argument 'version'" in error_message.lower():
+        error_guidance += (
+            "\nThe 'version' parameter is not supported in this version of webdriver-manager. Use ChromeDriverManager(chrome_type=ChromeType.CHROMIUM) without specifying 'version' to auto-detect the installed Chromium version (138.0.7204.183). "
+            "Alternatively, upgrade webdriver-manager to a version supporting explicit version specification."
+        )
+    if "no module named 'webdriver_manager.utils'" in error_message.lower():
+        error_guidance += (
+            "\nThe import 'webdriver_manager.utils' is incorrect. Use 'from webdriver_manager.core.os_manager import ChromeType' for webdriver-manager version 4.0.2."
         )
     if "unable to obtain driver for chrome" in error_message.lower():
         error_guidance += (
