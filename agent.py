@@ -26,7 +26,7 @@ import pdfplumber  # Added for PDF processing
 import tempfile
 import pytesseract  # Added for image processing
 import tenacity
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 from fuzzywuzzy import fuzz
 
 load_dotenv()
