@@ -33,6 +33,11 @@ async def analyze(questions_txt: UploadFile = File(..., alias="file"), attachmen
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
 
+        if attachments:
+            logger.info(f"Received attachments: {[attachment.filename for attachment in attachments]}")
+        else:
+            logger.info("No attachments received")
+
         # Handle attachments
 
         if attachments:
