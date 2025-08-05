@@ -78,6 +78,22 @@ def safe_execute(code_blocks, global_vars):
             # Ensure DuckDB is initialized before executing code
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
+            # Configure Selenium with compatible ChromeDriver
+            if 'webdriver' in code:
+                options = webdriver.ChromeOptions()
+                options.add_argument('--headless')
+                options.add_argument('--no-sandbox')
+                options.add_argument('--disable-dev-shm-usage')
+                # Ensure latest ChromeDriver
+                service = Service(ChromeDriverManager().install())
+                global_vars['webdriver'] = webdriver
+                global_vars['Service'] = Service
+                global_vars['ChromeDriverManager'] = ChromeDriverManager
+                global_vars['By'] = By
+                global_vars['WebDriverWait'] = WebDriverWait
+                global_vars['EC'] = EC
+                global_vars['options'] = options
+                global_vars['service'] = service
             exec(code.strip(), global_vars)
             if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
                 if global_vars['df'].empty:
