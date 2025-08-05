@@ -338,7 +338,6 @@ async def process_question(question: str):
                 # Data Source Handling
                 "When reading data from large remote sources (e.g., S3 Parquet paths or DuckDB queries over large partitions), avoid wildcard queries that may load excessive data. Instead, use lazy-loading patterns:"
                 "- Restrict queries to specific subsets (e.g., one year if available) to avoid excessive data loading"
-                "- Add `LIMIT` clauses (e.g., `LIMIT 15000`) during exploration."
                 "- Use DuckDB’s `read_parquet(..., hive_partitioning=True)` to avoid scanning all files unnecessarily."
                 "- Use `df_iter = con.execute(query).fetchdf(stream=True)` for streaming where supported."
                 "- Inspect available partitions first using `SELECT DISTINCT` on partition columns (`year`, `court`, etc.), then iterate selectively."
@@ -376,20 +375,40 @@ async def process_question(question: str):
         }
     ]
 
-    # File Path Extraction (Moved before Step 1)
+    # File Path Extraction
     file_path = None
+    logger.info(f"Raw question string:\n{question}")
     if "Attachments:" in question:
         try:
-            attachment_lines = [line for line in question.split('\n') if line.startswith("Attachments:")]
-            if not attachment_lines:
-                logger.error("No attachment details found in question")
-                return {"error": "No attachment details found", "details": "Question contains 'Attachments:' but no file details provided"}
-            attachment_line = attachment_lines[0]
-            attachment_details = [line for line in question.split('\n') if line.strip() and not line.startswith("Attachments:")]
+            # Split question into lines and find attachment section
+            lines = [line.strip() for line in question.split('\n') if line.strip()]
+            logger.info(f"Processed question lines: {lines}")
+            attachment_start = -1
+            for i, line in enumerate(lines):
+                if line.startswith("Attachments:"):
+                    attachment_start = i
+                    break
+            if attachment_start == -1:
+                logger.error("No valid 'Attachments:' section found in question")
+                return {"error": "No valid attachment section", "details": "Question contains 'Attachments:' but no valid section found"}
+            
+            # Extract attachment details (lines after "Attachments:")
+            attachment_details = lines[attachment_start + 1:]
+            logger.info(f"Attachment details lines: {attachment_details}")
             if not attachment_details:
                 logger.error("No file path provided in attachment details")
                 return {"error": "No file path provided", "details": "Attachment details are empty"}
-            file_path = attachment_details[0].split(": ")[1].strip()
+            
+            # Parse the first attachment line, handling various separators
+            attachment_line = attachment_details[0]
+            logger.info(f"Parsing attachment line: {attachment_line}")
+            match = re.match(r"([^:]+):\s*(.+)", attachment_line)
+            if not match:
+                logger.error(f"Invalid attachment format: {attachment_line}")
+                return {"error": "Invalid attachment format", "details": f"Expected 'filename: path', got '{attachment_line}'"}
+            
+            filename, path = match.groups()
+            file_path = path.strip()
             logger.info(f"Extracted file path: {file_path}")
             if not os.path.exists(file_path):
                 logger.error(f"File not found at path: {file_path}")
@@ -398,8 +417,8 @@ async def process_question(question: str):
             logger.error(f"Failed to extract file path from question: {e}")
             return {"error": "Failed to extract file path", "details": str(e)}
     else:
-        logger.error("No attachments specified in question")
-        return {"error": "No attachments specified", "details": "Question does not contain attachment details"}
+        logger.error("No 'Attachments:' section found in question")
+        return {"error": "No attachments specified", "details": "Question does not contain 'Attachments:' section"}
         
 # Step 1: Task Breakdown
     messages.append({
