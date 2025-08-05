@@ -373,8 +373,36 @@ async def process_question(question: str):
                 "Assign the final output to a variable named `result` (e.g., result = [...]). Do not only print the output; ensure it is assigned to `result`."
                 "Validate that the output matches the expected type and structure before returning."
             )
-        },
-        {
+        }
+    ]
+
+    # File Path Extraction (Moved before Step 1)
+    file_path = None
+    if "Attachments:" in question:
+        try:
+            attachment_lines = [line for line in question.split('\n') if line.startswith("Attachments:")]
+            if not attachment_lines:
+                logger.error("No attachment details found in question")
+                return {"error": "No attachment details found", "details": "Question contains 'Attachments:' but no file details provided"}
+            attachment_line = attachment_lines[0]
+            attachment_details = [line for line in question.split('\n') if line.strip() and not line.startswith("Attachments:")]
+            if not attachment_details:
+                logger.error("No file path provided in attachment details")
+                return {"error": "No file path provided", "details": "Attachment details are empty"}
+            file_path = attachment_details[0].split(": ")[1].strip()
+            logger.info(f"Extracted file path: {file_path}")
+            if not os.path.exists(file_path):
+                logger.error(f"File not found at path: {file_path}")
+                return {"error": "File not found", "details": f"No file exists at {file_path}"}
+        except Exception as e:
+            logger.error(f"Failed to extract file path from question: {e}")
+            return {"error": "Failed to extract file path", "details": str(e)}
+    else:
+        logger.error("No attachments specified in question")
+        return {"error": "No attachments specified", "details": "Question does not contain attachment details"}
+        
+# Step 1: Task Breakdown
+    messages.append({
             "role": "user",
             "content": (
                 f"Analyze and break down this task into clear steps: {question}. "
@@ -401,18 +429,6 @@ async def process_question(question: str):
     step_attempt = 0
     while step_attempt < MAX_ATTEMPTS:
         step_attempt += 1
-
-        # Extract file path from question if it contains attachment details
-        file_path = None
-        if "Attachments:" in question:
-            try:
-                attachment_line = [line for line in question.split('\n') if line.startswith("Attachments:")][0]
-                attachment_details = [line for line in question.split('\n') if line.strip() and not line.startswith("Attachments:")][0]
-                file_path = attachment_details.split(": ")[1].strip()
-                logger.info(f"Extracted file path: {file_path}")
-            except Exception as e:
-                logger.error(f"Failed to extract file path from question: {e}")
-                return {"error": "Failed to extract file path", "details": str(e)}
                 
         messages.append({
             "role": "user",
