@@ -250,8 +250,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         )
     if "no tables found" in error_message.lower():
         error_guidance += (
-            "\nThe webpage may contain JavaScript-rendered content. Use Selenium to render the page and extract tables. "
-            "Use webdriver_manager to automatically handle ChromeDriver installation."
+            "\nThe webpage may contain JavaScript-rendered content. "
+            "Use Selenium with ChromeDriverManager(chrome_type=ChromeType.CHROMIUM) to match the installed Chromium version and render the page."
+        )
+    if "session not created" in error_message.lower() or "chromedriver" in error_message.lower():
+        error_guidance += (
+            "\nSelenium failed due to a ChromeDriver version mismatch. Use ChromeDriverManager(chrome_type=ChromeType.CHROMIUM) to automatically match the installed Chromium version (e.g., /usr/bin/chromium). "
+            "Set options.binary_location='/usr/bin/chromium' in Selenium options."
         )
     if "unable to obtain driver for chrome" in error_message.lower():
         error_guidance += (
