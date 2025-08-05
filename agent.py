@@ -356,7 +356,7 @@ async def process_question(question: str):
         logger.info(f"[Attempt {step_attempt}] Step Code:\n{code_response}")
 
         code_blocks = extract_code_blocks(code_response)
-        success, error = safe_execute(code_blocks, global_vars)
+        success, error = await safe_execute(code_blocks, global_vars)
 
         if success:
             break
