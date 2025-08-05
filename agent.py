@@ -134,7 +134,7 @@ def clean_numeric_value(value):
         return float(value)
     try:
         value = str(value).lower().strip()
-        value = re.sub(r'[\$₹]', '', value)
+        value = re.sub(r'[\$₹€]', '', value)
         value = re.sub(r'^[a-zA-Z]+', '', value)
         #value = re.sub(r'[^0-9.e-]', '', value.replace('$', '').replace('₹', '').replace('t', '').replace('rk', '').replace('sm', '').replace('billion', 'e9').replace('million', 'e6').replace('\u1d40', '').replace('%', ''))
         #value = str(value).lower().replace(',', '').replace('$', '').replace('₹', '').replace('t', '')..replace('rk', '').replace('sm', '').replace('\u1d40', '').replace('%', '').strip()
@@ -150,6 +150,41 @@ def clean_numeric_value(value):
     except (ValueError, TypeError):
         return np.nan
 
+def infer_column_types(df, question_context=None):
+    numeric_cols, categorical_cols, temporal_cols = [], [], []
+    date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d', '%Y']
+    for col in df.columns:
+        sample = df[col].dropna().head(5)
+        if len(sample) == 0:
+            categorical_cols.append(col)
+            continue
+        # Check character composition for alphabetic vs numeric
+        sample_str = ' '.join(sample.astype(str))
+        alpha_count = sum(c.isalpha() for c in sample_str)
+        digit_count = sum(c.isdigit() for c in sample_str)
+        # If more alphabetic characters than numeric, treat as categorical
+        if alpha_count > digit_count:
+            categorical_cols.append(col)
+            continue
+        # Try cleaning as numeric
+        cleaned = sample.apply(clean_numeric_value)
+        if cleaned.dropna().count() >= len(sample) * 0.7:
+            numeric_cols.append(col)
+            continue
+        # Try as datetime
+        is_temporal = False
+        for date_format in date_formats:
+            try:
+                pd.to_datetime(sample, format=date_format, errors='raise')
+                temporal_cols.append(col)
+                is_temporal = True
+                break
+            except:
+                continue
+        if not is_temporal:
+            categorical_cols.append(col)
+    return numeric_cols, categorical_cols, temporal_cols
+"""
 def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
     date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d']
@@ -172,7 +207,7 @@ def infer_column_types(df):
         except:
             categorical_cols.append(col)
     return numeric_cols, categorical_cols, temporal_cols
-
+"""
 
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
