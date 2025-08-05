@@ -152,6 +152,46 @@ def clean_numeric_value(value):
     except (ValueError, TypeError):
         return np.nan
 
+def infer_column_types(df):
+    numeric_cols, categorical_cols, temporal_cols = [], [], []
+    for col in df.columns:
+        sample = df[col].dropna().head(5)
+        if len(sample) == 0:
+            categorical_cols.append(col)
+            continue
+        
+        # Check for numeric content without cleaning
+        try:
+            numeric_sample = pd.to_numeric(sample, errors='coerce')
+            if numeric_sample.notna().sum() >= len(sample) * 0.8:  # Allow 20% NaN tolerance
+                numeric_cols.append(col)
+                continue
+        except:
+            pass
+        
+        # Check for temporal content with flexible parsing
+        try:
+            temporal_sample = pd.to_datetime(sample, errors='coerce', infer_datetime_format=True)
+            if temporal_sample.notna().sum() >= len(sample) * 0.8:
+                temporal_cols.append(col)
+                continue
+        except:
+            pass
+        
+        # Analyze character composition for categorical columns
+        sample_str = ' '.join(sample.astype(str))
+        has_punctuation = any(c in sample_str for c in ['.', '_', '-', ':', '/'])
+        alpha_count = sum(c.isalpha() for c in sample_str)
+        digit_count = sum(c.isdigit() for c in sample_str)
+        # Classify as categorical if it has punctuation or more alphabetic characters
+        if has_punctuation or alpha_count >= digit_count:
+            categorical_cols.append(col)
+        else:
+            categorical_cols.append(col)  # Default to categorical for safety
+    
+    return numeric_cols, categorical_cols, temporal_cols
+    
+"""
 def infer_column_types(df, question_context=None):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
     date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d', '%Y']
@@ -186,6 +226,7 @@ def infer_column_types(df, question_context=None):
         if not is_temporal:
             categorical_cols.append(col)
     return numeric_cols, categorical_cols, temporal_cols
+"""
 """
 def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
