@@ -25,10 +25,7 @@ async def root():
 @app.post("/api/")
 async def analyze(questions_txt: UploadFile = File(...), attachments: list[UploadFile] = File(None)):
     try:
-        # Validate questions.txt
-        if questions_txt.filename != "questions.txt":
-            raise HTTPException(status_code=400, detail="The question file must be named 'questions.txt'")
-        
+       
         # Read the question file
         question = (await questions_txt.read()).decode("utf-8")
         logger.info(f"Received question: {question}")
