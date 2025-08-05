@@ -26,7 +26,7 @@ async def root():
 async def analyze(
     questions_txt: UploadFile = File(..., alias="file"),
     attachments: list[UploadFile] = File(None, alias="attachments"),
-    **extra_form_data: UploadFile
+    **extra_form_data
 ):
     temp_file_paths = []
     try:
