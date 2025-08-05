@@ -25,8 +25,7 @@ async def root():
 @app.post("/api/")
 async def analyze(
     questions_txt: UploadFile = File(..., alias="file"),
-    attachments: list[UploadFile] = File(None, alias="attachments"),
-    **extra_form_data
+    attachments: list[UploadFile] = File(None, alias="attachments")
 ):
     temp_file_paths = []
     try:
@@ -37,6 +36,8 @@ async def analyze(
             raise HTTPException(status_code=400, detail="Question file cannot be empty or contain only whitespace")
 
         # Collect all attachments from 'attachments' field and any other form fields
+        # Parse form data manually
+        form = await request.form()
         all_attachments = []
         if attachments:
             all_attachments.extend(attachments)
