@@ -25,6 +25,7 @@ import duckdb
 import pdfplumber  # Added for PDF processing
 import tempfile
 import pytesseract  # Added for image processing
+import tenacity
 
 load_dotenv()
 
@@ -77,6 +78,27 @@ def extract_code_blocks(response):
 # Example usage in safe_execute or generated code
 async def safe_execute(code_blocks, global_vars):
     from selenium.webdriver.chrome.service import Service  # Add this import
+
+    # Retry decorator for Selenium initialization
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_fixed(2),
+        retry=tenacity.retry_if_exception_type(WebDriverException),
+        reraise=True
+    )
+    def init_selenium():
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--disable-extensions')
+        options.binary_location = '/usr/bin/chromium'
+        # Use ChromeDriverManager to match the installed Chromium version
+        service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+        logger.info("Selenium WebDriver initialized successfully.")
+        return options, service
+    
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
@@ -258,8 +280,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         )
     if "ChromeDriverManager.__init__() got an unexpected keyword argument 'version'" in error_message.lower():
         error_guidance += (
-            "\nThe 'version' parameter is not supported in this version of webdriver-manager. Use ChromeDriverManager(chrome_type=ChromeType.CHROMIUM) without specifying 'version' to auto-detect the installed Chromium version (138.0.7204.183). "
-            "Alternatively, upgrade webdriver-manager to a version supporting explicit version specification."
+            "\nRemove the 'version' parameter from ChromeDriverManager. Use ChromeDriverManager(chrome_type=ChromeType.CHROMIUM)."
         )
     if "no module named 'webdriver_manager.utils'" in error_message.lower():
         error_guidance += (
