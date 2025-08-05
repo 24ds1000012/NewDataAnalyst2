@@ -25,27 +25,39 @@ async def root():
 @app.post("/api/")
 async def analyze(
     request: Request,
-    questions_txt: UploadFile = File(..., alias="file"),
+    questions_txt: UploadFile = File(None, alias="file"),  # Make 'file' optional
+    questions_txt_alt: UploadFile = File(None, alias="questions.txt"),  # Add support for 'questions.txt'
     attachments: list[UploadFile] = File(None, alias="attachments")
 ):
     temp_file_paths = []
     try:
-        # Read the question file
-        question = (await questions_txt.read()).decode("utf-8")
-        logger.info(f"Received question: {question}")
+        # Read the question file from either 'file' or 'questions.txt'
+        question = None
+        if questions_txt:
+            question = (await questions_txt.read()).decode("utf-8")
+            logger.info(f"Received question via 'file' field: {questions_txt.filename}")
+        elif questions_txt_alt:
+            question = (await questions_txt_alt.read()).decode("utf-8")
+            logger.info(f"Received question via 'questions.txt' field: {questions_txt_alt.filename}")
+        else:
+            raise HTTPException(status_code=400, detail="No question file provided in 'file' or 'questions.txt' field")
+
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question file cannot be empty or contain only whitespace")
 
-        # Collect all attachments from 'attachments' field and any other form fields
-        # Parse form data manually
+        # Collect all attachments from form data
         form = await request.form()
         all_attachments = []
+        
+        # Include attachments from the 'attachments' field
         if attachments:
             all_attachments.extend(attachments)
             logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
 
-        # Check for additional form fields that contain UploadFile instances
+        # Check all form fields for UploadFile instances, excluding question file fields
         for field_name, field_value in form.items():
+            if field_name in ["file", "questions.txt"]:  # Skip question file fields
+                continue
             if isinstance(field_value, UploadFile):
                 all_attachments.append(field_value)
                 logger.info(f"Received attachment via '{field_name}' field: {field_value.filename}")
