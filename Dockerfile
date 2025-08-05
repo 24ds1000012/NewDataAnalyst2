@@ -1,9 +1,12 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Install system dependencies for Selenium, ChromeDriver, and lxml
+# Install system dependencies for Selenium, ChromeDriver, lxml, and Tesseract
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
+    tesseract-ocr \
+    libpng-dev \
+    libjpeg-dev \
     libxml2-dev \
     libxslt1-dev \
     zlib1g-dev \
@@ -24,12 +27,13 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set environment variables for Matplotlib, Fontconfig, and DuckDB
+# Set environment variables for Matplotlib, Fontconfig, DuckDB, and Chromium
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/cache
 ENV DUCKDB_HOME=/tmp/duckdb
 ENV DUCKDB_TEMP_DIR=/tmp/duckdb
 ENV DUCKDB_EXTENSION_DIR=/tmp/duckdb/extensions
+ENV CHROMIUM_PATH=/usr/bin/chromium
 ENV PYTHONUNBUFFERED=1
 
 # Copy all other code
