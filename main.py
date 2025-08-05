@@ -1,20 +1,20 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-#from fastapi.responses import Response
 from fastapi.responses import JSONResponse
 from agent import process_question
 import uvicorn
 import traceback
 import json
-from fastapi import Request
 import asyncio
 import logging
+import tempfile
+import os
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger(__name__)  # Create a logger instance
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -23,14 +23,32 @@ async def root():
     return {"status": "Running"}
 
 @app.post("/api/")
-
-async def analyze(file: UploadFile = File(...)):
+async def analyze(questions_txt: UploadFile = File(...), attachments: list[UploadFile] = File(None)):
     try:
-        question = (await file.read()).decode("utf-8")
+        # Validate questions.txt
+        if questions_txt.filename != "questions.txt":
+            raise HTTPException(status_code=400, detail="The question file must be named 'questions.txt'")
+        
+        # Read the question file
+        question = (await questions_txt.read()).decode("utf-8")
         logger.info(f"Received question: {question}")
         if not question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
-        # Process question with timeout
+
+        # Handle attachments
+        temp_file_paths = []
+        if attachments:
+            for attachment in attachments:
+                # Save each attachment to a temporary file
+                suffix = f".{attachment.filename.split('.')[-1]}" if '.' in attachment.filename else ""
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                    tmp_file.write(await attachment.read())
+                    temp_file_paths.append((attachment.filename, tmp_file.name))
+                logger.info(f"Saved attachment {attachment.filename} to {tmp_file.name}")
+            # Append temporary file paths to the question
+            question += "\nAttachments:\n" + "\n".join([f"{filename}: {path}" for filename, path in temp_file_paths])
+
+        # Process the question
         result = await asyncio.wait_for(process_question(question), timeout=300.0)
         logger.info(f"Returning result: {result}")
         return JSONResponse(content=result)
@@ -40,5 +58,13 @@ async def analyze(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error processing request: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
+    finally:
+        # Clean up temporary files
+        for _, temp_path in temp_file_paths:
+            try:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                    logger.info(f"Deleted temporary file: {temp_path}")
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {temp_path}: {e}")
 
