@@ -45,7 +45,7 @@ async def analyze(
             logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
 
         # Check for additional form fields that contain UploadFile instances
-        for field_name, field_value in extra_form_data.items():
+        for field_name, field_value in form.items():
             if isinstance(field_value, UploadFile):
                 all_attachments.append(field_value)
                 logger.info(f"Received attachment via '{field_name}' field: {field_value.filename}")
