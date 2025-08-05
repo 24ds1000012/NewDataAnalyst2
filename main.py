@@ -8,6 +8,7 @@ import asyncio
 import logging
 import tempfile
 import os
+from starlette.datastructures import UploadFile as StarletteUploadFile  # Import Starlette UploadFile
 
 # Configure logging
 logging.basicConfig(
@@ -57,15 +58,15 @@ async def analyze(
             all_attachments.extend(attachments)
             logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
 
-        # Check all form fields for UploadFile instances
+        # Check all form fields for UploadFile instances (FastAPI or Starlette)
         for field_name, field_value in form.items():
             logger.debug(f"Processing field '{field_name}': type={type(field_value)}")
             if field_name in ["file", "questions.txt"]:  # Skip question file fields
                 continue
-            if isinstance(field_value, UploadFile):
+            if isinstance(field_value, (UploadFile, StarletteUploadFile)):  # Check both FastAPI and Starlette UploadFile
                 all_attachments.append(field_value)
                 logger.info(f"Received attachment via '{field_name}' field: {field_value.filename}")
-            elif isinstance(field_value, list) and all(isinstance(item, UploadFile) for item in field_value):
+            elif isinstance(field_value, list) and all(isinstance(item, (UploadFile, StarletteUploadFile)) for item in field_value):
                 all_attachments.extend(field_value)
                 logger.info(f"Received attachments via '{field_name}' field: {[item.filename for item in field_value]}")
             else:
