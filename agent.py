@@ -417,6 +417,7 @@ async def process_question(question: str):
                 "Describe how to clean and analyze data dynamically, selecting columns based on context and data types."
             )
         }
+    )
 
     # Step 1: Task Breakdown
     task_plan = await ask_gpt(messages)
