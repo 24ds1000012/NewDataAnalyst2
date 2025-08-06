@@ -564,3 +564,5 @@ async def process_question(question: str):
         logger.error(f"Result extraction failed: {e}")
         return {"error": "Result extraction failed", "details": str(e)}
 
+    
+
