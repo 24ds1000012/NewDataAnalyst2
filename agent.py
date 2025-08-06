@@ -96,6 +96,10 @@ async def safe_execute(code_blocks, global_vars):
         driver = webdriver.Chrome(service=service, options=options)
         logger.info("Selenium WebDriver initialized successfully.")
         return driver
+
+    # Initialize dfs if not already present
+    if 'dfs' not in global_vars:
+        global_vars['dfs'] = {}
     
     for idx, code in enumerate(code_blocks):
         try:
@@ -130,14 +134,26 @@ async def safe_execute(code_blocks, global_vars):
                 await asyncio.run(run_async_code())
             else:
                 exec(code.strip(), global_vars)
-            if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
+            # Validate DataFrame storage
+            if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
+                for filename, df in global_vars['dfs'].items():
+                    if isinstance(df, pd.DataFrame):
+                        if df.empty:
+                            logger.error(f"DataFrame for {filename} is empty after loading.")
+                            return False, f"Empty DataFrame for {filename}."
+                        logger.info(f"Loaded DataFrame for {filename} with columns: {list(df.columns)}")
+                    else:
+                        logger.warning(f"Invalid DataFrame for {filename}: {type(df)}")
+            elif 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
                 if global_vars['df'].empty:
                     logger.error("DataFrame is empty after loading.")
                     return False, "Empty DataFrame loaded."
                 logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
+                # Store single DataFrame in dfs for consistency
+                global_vars['dfs']['default'] = global_vars['df']
             else:
-                logger.error("No DataFrame created.")
-                return False, "No DataFrame created."
+                logger.error("No valid DataFrame created.")
+                return False, "No valid DataFrame created."
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
@@ -149,6 +165,28 @@ async def safe_execute(code_blocks, global_vars):
                 except Exception as e:
                     logger.warning(f"Failed to close Selenium driver: {e}")
     return True, None
+    
+# Mapping of superscript digits to ASCII digits
+SUPERSCRIPT_DIGIT_MAP = {
+    '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+    '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9'
+}
+
+def normalize_superscripts(value):
+    """Convert superscript digits to ASCII equivalents and log superscript characters."""
+    if not isinstance(value, str):
+        value = str(value)
+    
+    # Log any superscript characters found
+    superscript_chars = [char for char in value if ord(char) in range(0x2070, 0x209F) or ord(char) in [0x00B2, 0x00B3, 0x00B9]]
+    if superscript_chars:
+        logger.info(f"Superscript characters detected in value: '{value}' (chars: {superscript_chars})")
+    
+    # Normalize superscript digits
+    for superscript, ascii in SUPERSCRIPT_DIGIT_MAP.items():
+        value = value.replace(superscript, ascii)
+    
+    return value
 
 def clean_numeric_value(value):
     if pd.isna(value):
@@ -157,7 +195,15 @@ def clean_numeric_value(value):
         return float(value)
     try:
         value = str(value).lower().strip()
-        value = re.sub(r'[\$₹€%T]', '', value)  # Remove 'T' and other symbols
+        
+        # Normalize superscript digits
+        value = normalize_superscripts(value)
+        logger.info(f"Normalized value: '{value}'")
+        
+        # Remove currency symbols, percentage, T, and any alphabetic prefix (including normalized superscripts)
+        value = re.sub(r'^[a-zA-Z]+', '', value)  # Remove leading alphabetic characters
+        value = re.sub(r'[\$₹€%T]', '', value)    # Remove specific symbols
+        
         if 'billion' in value or 'bn' in value:
             value = float(re.sub(r'[^\d.e-]', '', value.replace('billion', '').replace('bn', ''))) * 1e9
         elif 'million' in value or 'mn' in value:
@@ -170,7 +216,9 @@ def clean_numeric_value(value):
             value = float(re.sub(r'[^\d.e-]', '', value))
         return float(value)
     except (ValueError, TypeError):
+        logger.error(f"Failed to clean value '{value}': returning np.nan")
         return np.nan
+        
 
 def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
@@ -212,6 +260,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nCheck for non-numeric prefixes, suffixes, superscripts or annotations in numeric columns. "
             "Apply a cleaning function only to columns intended to be numeric based on question context. "
+            "Remove superscripts."
             "Handle formats like '$1,234', '₹1,234', '1.2 billion', or '1.2 million' by scaling appropriately (e.g., to millions)."
             "Preserve categorical columns like 'Name', 'Symbol', or 'Company Name' without cleaning."
         )
