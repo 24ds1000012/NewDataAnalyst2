@@ -261,7 +261,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "column" in error_message.lower() or "key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
-            "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). 
+            "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
             "Do not assume specific column names like 'Name'. Use fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to find columns like 'Company Name', 'Symbol' for identifiers, or '% Change', 'Change' for numeric metrics. "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
