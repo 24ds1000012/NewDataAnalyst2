@@ -376,7 +376,7 @@ async def process_question(question: str):
         }
     ]
 
-    file_path = None
+    file_paths = {}
     if "Attachments:" in question:
         try:
             lines = [line.strip() for line in question.split('\n') if line.strip()]
