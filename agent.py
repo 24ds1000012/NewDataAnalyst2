@@ -307,7 +307,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         )
     if "unable to obtain driver for chrome" in error_message.lower():
         error_guidance += (
-            "\nEnsure ChromeDriver is installed and accessible. Use webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
+            "\nEnsure ChromeDriver is installed and accessible. Use Selenium with webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
             "Do not specify a manual path; let webdriver_manager handle it."
         )
     if "column" in error_message.lower() or "key" in error_message.lower():
@@ -362,6 +362,12 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "'int' object has no attribute 'lower'" in error_message.lower() or "object of type 'int' has no len()" in error_message.lower():
         error_guidance += (
             "\nFuzzy matching failed due to non-string column names (e.g., integers). Convert all column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching."
+        )
+    if "no relevant table found" in error_message.lower():
+        error_guidance += (
+            "\nNo table was selected due to overly restrictive fuzzy matching. "
+            "Relax fuzzy matching to select a table if it contains at least one column matching "
+            "Inspect all table columns and log them. Use fuzzy matching to map column names ."
         )
     if "no valid DataFrame created" in error_message.lower():
         error_guidance += (
