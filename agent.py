@@ -261,6 +261,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "column" in error_message.lower() or "key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
+            "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). 
             "Do not assume specific column names like 'Name'. Use fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to find columns like 'Company Name', 'Symbol' for identifiers, or '% Change', 'Change' for numeric metrics. "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
@@ -512,7 +513,7 @@ async def process_question(question: str):
         "role": "user", 
         "content": (
             f"The dataframe metadata is:\n{metadata_info}\n\n"
-            "Generate Python code to answer the question. Use the preprocessed DataFrame `df`."
+            "Generate Python code to answer the question. Use the preprocessed DataFrames in `dfs`"
             "Determine which DataFrame to use based on the question context. "# (e.g., use dfs['data.pdf'] for questions about subjects and averages, dfs['exc.xlsx'] for questions about product demand). "
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Inspect columns and infer types (numeric, categorical, temporal) using `infer_column_types`. "
