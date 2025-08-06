@@ -396,22 +396,22 @@ async def process_question(question: str):
                 logger.error("No file path provided in attachment details")
                 return {"error": "No file path provided", "details": "Attachment details are empty"}
             
-            attachment_line = attachment_details[0]
-            logger.info(f"Parsing attachment line: {attachment_line}")
-            match = re.match(r"([^:]+):\s*(.+)", attachment_line)
-            if not match:
-                logger.error(f"Invalid attachment format: {attachment_line}")
-                return {"error": "Invalid attachment format", "details": f"Expected 'filename: path', got '{attachment_line}'"}
-            
-            filename, path = match.groups()
-            file_path = path.strip()
-            logger.info(f"Extracted file path: {file_path}")
-            if not os.path.exists(file_path):
-                logger.error(f"File not found at path: {file_path}")
-                return {"error": "File not found", "details": f"No file exists at {file_path}"}
+            # Parse multiple attachments
+            for attachment_line in attachment_details:
+                logger.info(f"Parsing attachment line: {attachment_line}")
+                match = re.match(r"([^:]+):\s*(.+)", attachment_line)
+                if not match:
+                    logger.error(f"Invalid attachment format: {attachment_line}")
+                    continue
+                filename, path = match.groups()
+                file_paths[filename.strip()] = path.strip()
+                logger.info(f"Extracted file: {filename} -> {path}")
+                if not os.path.exists(path.strip()):
+                    logger.error(f"File not found at path: {path}")
+                    file_paths[filename.strip()] = None  # Mark as invalid
         except Exception as e:
-            logger.error(f"Failed to extract file path from question: {e}")
-            return {"error": "Failed to extract file path", "details": str(e)}
+            logger.error(f"Failed to extract file paths from question: {e}")
+            return {"error": "Failed to extract file paths", "details": str(e)}
     else:
         logger.info("No attachments specified; proceeding with question processing")
         
@@ -419,7 +419,8 @@ async def process_question(question: str):
         "role": "user",
         "content": (
             f"Analyze and break down this task into clear steps: {question}. "
-            f"{'The question includes an attachment with file path: ' + file_path if file_path else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
+            f"{'The question includes attachments with file paths: ' + str(file_paths) if file_paths else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
+            "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
             "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
             "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
@@ -447,8 +448,8 @@ async def process_question(question: str):
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
-                f"{'The question specifies a PDF OR Excel or Word file at path: ' + file_path if file_path else 'No attachments provided; check for inline data in the question or external sources (e.g., web scraping based on URLs or keywords).'} "
-                "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
+                f"{'The question specifies attachments at paths: ' + str(file_paths) if file_paths else 'No attachments provided; check for inline data or external sources.'} "                "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
+                "For each attachment, determine its type by extension and process accordingly:"                
                 "- For PDFs, use pdfplumber.open(file_path) to extract text or tables; use pytesseract.image_to_string(page.to_image().original) for image-based PDFs. "
                 "- For Excel files, use pandas.read_excel(file_path). "
                 "- For CSV files, use pandas.read_csv(file_path). "
@@ -488,16 +489,21 @@ async def process_question(question: str):
     metadata_info = "No dataframe created."
     if "df" in global_vars and isinstance(global_vars["df"], pd.DataFrame):
         try:
-            df = global_vars["df"]
-            buffer = StringIO()
-            df.info(buf=buffer)
-            buffer.seek(0)
-            metadata_info = buffer.getvalue()
-            numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
-            metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
-            metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
-            metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
-            metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
+            dfs = global_vars["dfs"]
+            metadata_info = ""
+            for filename, df in dfs.items():
+                if isinstance(df, pd.DataFrame):
+                    buffer = StringIO()
+                    df.info(buf=buffer)
+                    buffer.seek(0)
+                    metadata_info += f"\nFile: {filename}\n{buffer.getvalue()}"
+                    numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
+                    metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
+                    metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
+                    metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
+                    metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
+                else:
+                    metadata_info += f"\nFile: {filename}\nNo valid DataFrame created."
         except Exception as e:
             metadata_info = f"Error retrieving DataFrame metadata: {str(e)}"
     logger.info(f"DataFrame Metadata:\n{metadata_info}")
@@ -507,6 +513,7 @@ async def process_question(question: str):
         "content": (
             f"The dataframe metadata is:\n{metadata_info}\n\n"
             "Generate Python code to answer the question. Use the preprocessed DataFrame `df`."
+            "Determine which DataFrame to use based on the question context. "# (e.g., use dfs['data.pdf'] for questions about subjects and averages, dfs['exc.xlsx'] for questions about product demand). "
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Inspect columns and infer types (numeric, categorical, temporal) using `infer_column_types`. "
             "Select columns based on question context"
