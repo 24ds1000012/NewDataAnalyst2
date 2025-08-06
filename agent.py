@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
-MAX_ATTEMPTS = 4
+MAX_ATTEMPTS = 5
 
 def initialize_duckdb():
     duckdb_dir = os.getenv("DUCKDB_HOME", "/tmp/duckdb")
