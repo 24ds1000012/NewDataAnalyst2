@@ -158,14 +158,16 @@ def clean_numeric_value(value):
     try:
         value = str(value).lower().strip()
         value = re.sub(r'[\$₹€%T]', '', value)  # Remove 'T' and other symbols
-        if 'billion' in value:
-            value = float(re.sub(r'[^\d.e-]', '', value.replace('billion', ''))) * 1e9
-        elif 'million' in value:
-            value = float(re.sub(r'[^\d.e-]', '', value.replace('million', ''))) * 1e6
-        elif 'crore' in value:
-            value = float(re.sub(r'[^\d.e-]', '', value.replace('crore', ''))) * 1e7
+        if 'billion' in value or 'bn' in value:
+            value = float(re.sub(r'[^\d.e-]', '', value.replace('billion', '').replace('bn', ''))) * 1e9
+        elif 'million' in value or 'mn' in value:
+            value = float(re.sub(r'[^\d.e-]', '', value.replace('million', '').replace('mn', ''))) * 1e6
+        elif 'crore' in value or 'cr' in value:
+            value = float(re.sub(r'[^\d.e-]', '', value.replace('crore', '').replace('cr', ''))) * 1e7
+        elif 'lakh' in value:
+            value = float(re.sub(r'[^\d.e-]', '', value.replace('lakh', ''))) * 1e5
         else:
-            value = re.sub(r'[^\d.e-]', '', value)
+            value = float(re.sub(r'[^\d.e-]', '', value))
         return float(value)
     except (ValueError, TypeError):
         return np.nan
@@ -321,6 +323,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Preserve categorical columns like 'Name', 'Symbol'. "
             "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
             "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
+            "Extract fields dynamically based on question context using flexible regular expressions and fuzzy matching (fuzzywuzzy.fuzz.partial_ratio). "
             "For web scraping, select the correct table by checking for relevant columns"
             "Use the correct import for ChromeType: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
             "For JavaScript-rendered content, use Selenium with ChromeDriverManager to handle WebDriver setup. "
