@@ -127,6 +127,8 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['pytesseract'] = pytesseract
             if 'fuzz' in code:
                 global_vars['fuzz'] = fuzz
+            if 'clean_numeric_value' in code:
+                global_vars['clean_numeric_value'] = clean_numeric_value
             if 'async' in code or 'await' in code:
                 import asyncio
                 async def run_async_code():
@@ -134,25 +136,26 @@ async def safe_execute(code_blocks, global_vars):
                 await asyncio.run(run_async_code())
             else:
                 exec(code.strip(), global_vars)
+
+            # Log dfs contents for debugging
+            logger.info(f"global_vars['dfs'] keys: {list(global_vars.get('dfs', {}).keys())}")
+
             # Validate DataFrame storage
+            has_valid_df = False
             if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
                 for filename, df in global_vars['dfs'].items():
-                    if isinstance(df, pd.DataFrame):
-                        if df.empty:
-                            logger.error(f"DataFrame for {filename} is empty after loading.")
-                            return False, f"Empty DataFrame for {filename}."
+                    if isinstance(df, pd.DataFrame) and not df.empty:
                         logger.info(f"Loaded DataFrame for {filename} with columns: {list(df.columns)}")
+                        has_valid_df = True
                     else:
-                        logger.warning(f"Invalid DataFrame for {filename}: {type(df)}")
-            elif 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
-                if global_vars['df'].empty:
-                    logger.error("DataFrame is empty after loading.")
-                    return False, "Empty DataFrame loaded."
+                        logger.warning(f"Invalid or empty DataFrame for {filename}: {type(df)}")
+            if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame) and not global_vars['df'].empty:
                 logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
-                # Store single DataFrame in dfs for consistency
                 global_vars['dfs']['default'] = global_vars['df']
-            else:
-                logger.error("No valid DataFrame created.")
+                has_valid_df = True
+            
+            if not has_valid_df:
+                logger.error("No valid non-empty DataFrame created.")
                 return False, "No valid DataFrame created."
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
@@ -360,12 +363,21 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nFuzzy matching failed due to non-string column names (e.g., integers). Convert all column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching."
         )
+    if "no valid DataFrame created" in error_message.lower():
+        error_guidance += (
+            "\nNo valid DataFrame was stored in global_vars['dfs'] or global_vars['df']. "
+            "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
+            "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data. "
+            "Log the contents of global_vars['dfs'] and global_vars['df'] after execution for debugging."
+        )
 
     messages.append({
         "role": "user",
         "content": (
             f"The previous {stage} failed with this error:\n\n{error_guidance}\n\n"
             "Regenerate the {stage}. Inspect the DataFrame's columns, dtypes, and sample data (first 5 rows) and print them for debugging. "
+            "Store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` and `dfs['default']` for a single source. "
+            "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data (e.g., calculating averages across all tables). "
             "Do not assume specific column names. Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on keywords from the question (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Convert all column names to strings using `df.columns = df.columns.astype(str)` before fuzzy matching to handle non-string columns. "
             "Select columns based on question context and data types (numeric for metrics, categorical for identifiers, temporal for dates). "
@@ -412,11 +424,12 @@ async def process_question(question: str):
                 "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
                 "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
+                "Clean numeric columns using `clean_numeric_value`, which normalizes superscript digits (e.g., '¹' to '1') and removes prefixes/suffixes (e.g., 'T', 'SM', 'ᴬ', 'ᴮ'). "                
                 "Preserve categorical columns (e.g., 'title', 'name'). Convert temporal columns to datetime, handling various formats. Drop rows with missing critical data. "
                 "Handle missing or malformed data by dropping rows or imputing sensibly based on the question’s requirements. "
                 "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data."
-                "Generate Python code only, executable locally, and store the processed DataFrame in `df`. "
-                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
+                "Generate Python code only, executable locally, and store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source. "
+                "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
                 "For specific questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
                 "For plots, use matplotlib with figsize=(4,3), dpi=100, and encode to base64 using BytesIO, ensuring the base64 string is under 100,000 bytes (use format='png', reduce DPI if needed). "
                 "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
@@ -515,11 +528,14 @@ async def process_question(question: str):
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
                 "Clean numeric columns by removing non-numeric characters, prefixes (e.g., 'T'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
+                "Clean numeric columns using `clean_numeric_value`, which normalizes superscript digits (e.g., '¹' to '1') and removes prefixes/suffixes (e.g., 'T', 'SM', 'ᴬ', 'ᴮ'). "
+                "Log values containing superscript characters before and after cleaning. "
                 "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
                 "For web scraping, select the correct table by checking for relevant columns (e.g., 'Worldwide gross' instead of 'Gross')."
                 "Convert temporal columns to datetime with flexible parsing. "
                 "Drop rows with missing critical data for the question’s requirements."
-                "Store the DataFrame in `df` and set `global_vars['df']`."
+                "Store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source (e.g., web scraping, single file). "
+                "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."
             )
         })
         code_response = await ask_gpt(messages)
@@ -537,26 +553,35 @@ async def process_question(question: str):
             return {"error": "Step code execution failed after max attempts", "details": error}
 
     metadata_info = "No dataframe created."
-    if "df" in global_vars and isinstance(global_vars["df"], pd.DataFrame):
-        try:
-            dfs = global_vars["dfs"]
-            metadata_info = ""
-            for filename, df in dfs.items():
-                if isinstance(df, pd.DataFrame):
-                    buffer = StringIO()
-                    df.info(buf=buffer)
-                    buffer.seek(0)
-                    metadata_info += f"\nFile: {filename}\n{buffer.getvalue()}"
-                    numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
-                    metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
-                    metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
-                    metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
-                    metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
-                else:
-                    metadata_info += f"\nFile: {filename}\nNo valid DataFrame created."
-        except Exception as e:
-            metadata_info = f"Error retrieving DataFrame metadata: {str(e)}"
+    if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
+        metadata_info = ""
+        for filename, df in global_vars['dfs'].items():
+            if isinstance(df, pd.DataFrame):
+                buffer = StringIO()
+                df.info(buf=buffer)
+                buffer.seek(0)
+                metadata_info += f"\nFile: {filename}\n{buffer.getvalue()}"
+                numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
+                metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
+                metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
+                metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
+                metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
+            else:
+                metadata_info += f"\nFile: {filename}\nNo valid DataFrame created."
+    elif 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
+        buffer = StringIO()
+        global_vars['df'].info(buf=buffer)
+        buffer.seek(0)
+        metadata_info = f"\nSingle DataFrame:\n{buffer.getvalue()}"
+        numeric_cols, categorical_cols, temporal_cols = infer_column_types(global_vars['df'])
+        metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
+        metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
+        metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
+        metadata_info += "\nSample data (first 5 rows):\n" + str(global_vars['df'].head(5))
+        global_vars['dfs']['default'] = global_vars['df']
     logger.info(f"DataFrame Metadata:\n{metadata_info}")
+
+    
 
     messages.append({
         "role": "user", 
