@@ -256,7 +256,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
     if "HTTPConnectionPool" in error_message or "timeout" in error_message.lower():
         error_guidance += (
-            "\nSelenium timed out while loading the page. Increase WebDriverWait timeout to 20 seconds and use EC.presence_of_element_located((By.TAG_NAME, 'table')). "
+            "\nSelenium timed out while loading the page. Increase WebDriverWait timeout to 30 seconds and use EC.presence_of_element_located((By.TAG_NAME, 'table')). "
             "Add a timeout parameter to requests.get (e.g., timeout=30). Ensure network stability."
         )
     if "could not convert string to float" in error_message:
@@ -369,6 +369,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
             "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data. "
             "Log the contents of global_vars['dfs'] and global_vars['df'] after execution for debugging."
+        )
+    if "KeyError" in error_message.lower():
+        error_guidance += (
+            "\nA column name mismatch occurred . "
+            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to map actual column names . "
+            "Inspect DataFrame columns with df.columns.tolist() and log them. "
+            "Select columns dynamically based on question context and available columns."
         )
 
     messages.append({
