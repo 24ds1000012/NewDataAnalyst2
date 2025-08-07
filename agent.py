@@ -442,6 +442,7 @@ async def process_question(question: str):
                 "For CSV files, read using pandas.read_csv(file_path). "
                 "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
                 "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
+                "In some cases like company financials, or company stock price, it can be in any currency."
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
                 "Clean numeric columns using `clean_numeric_value`, which normalizes superscript digits (e.g., '¹' to '1') and removes prefixes/suffixes (e.g., 'T', 'SM', 'ᴬ', 'ᴮ'). "                
                 "Preserve categorical columns (e.g., 'title', 'name'). Convert temporal columns to datetime, handling various formats. Drop rows with missing critical data. "
