@@ -457,7 +457,7 @@ async def process_question(question: str):
                 "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data."
                 "Generate Python code only, executable locally, and store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source. "
                 "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
-                "For images, store extracted text in `global_vars['extracted_text']` and parse it for specific values using regular expressions.
+                "For images, store extracted text in `global_vars['extracted_text']` and parse it for specific values using regular expressions."
                 "For specific questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
                 "For plots, use matplotlib with figsize=(4,3), dpi=100, and encode to base64 using BytesIO, ensuring the base64 string is under 100,000 bytes (use format='png', reduce DPI if needed). "
                 "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
