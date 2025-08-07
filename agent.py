@@ -141,22 +141,27 @@ async def safe_execute(code_blocks, global_vars):
             logger.info(f"global_vars['dfs'] keys: {list(global_vars.get('dfs', {}).keys())}")
 
             # Validate DataFrame storage
-            has_valid_df = False
+            #has_valid_df = False
+            has_valid_data = False
             if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
                 for filename, df in global_vars['dfs'].items():
                     if isinstance(df, pd.DataFrame) and not df.empty:
                         logger.info(f"Loaded DataFrame for {filename} with columns: {list(df.columns)}")
-                        has_valid_df = True
+                        #has_valid_df = True
+                        has_valid_data = True
                     else:
                         logger.warning(f"Invalid or empty DataFrame for {filename}: {type(df)}")
             if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame) and not global_vars['df'].empty:
                 logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
                 global_vars['dfs']['default'] = global_vars['df']
-                has_valid_df = True
-            
-            if not has_valid_df:
+                #has_valid_df = True
+                has_valid_data = True
+            elif 'extracted_text' in global_vars and global_vars['extracted_text']:
+                logger.info(f"Extracted text: {global_vars['extracted_text']}")
+                has_valid_data = True
+            if not has_valid_data:
                 logger.error("No valid non-empty DataFrame created.")
-                return False, "No valid DataFrame created."
+                return False, "No valid DataFrame or extracted text created."
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
@@ -375,12 +380,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Relax fuzzy matching to select a table if it contains at least one column matching "
             "Inspect all table columns and log them. Use fuzzy matching to map column names ."
         )
-    if "no valid DataFrame created" in error_message.lower():
+    if "no valid DataFrame or extracted text created" in error_message.lower():
         error_guidance += (
-            "\nNo valid DataFrame was stored in global_vars['dfs'] or global_vars['df']. "
+            "\nNo valid DataFrame or extracted text was stored. "
+            "For images, use pytesseract.image_to_string(file_path) to extract text and store it in global_vars['extracted_text'].Use regular expressions (e.g., r'R = (\d+\.?\d*)\s*miles') to parse specific values from the text."                 "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
             "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
             "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data. "
-            "Log the contents of global_vars['dfs'] and global_vars['df'] after execution for debugging."
+            "Log the contents of global_vars['dfs'], global_vars['df'], and global_vars['extracted_text'] after execution for debugging."
         )
     if "KeyError" in error_message.lower():
         error_guidance += (
@@ -396,6 +402,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             f"The previous {stage} failed with this error:\n\n{error_guidance}\n\n"
             "Regenerate the {stage}. Inspect the DataFrame's columns, dtypes, and sample data (first 5 rows) and print them for debugging. "
             "Store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` and `dfs['default']` for a single source. "
+            "For images, use pytesseract.image_to_string(file_path) to extract text and store it in global_vars['extracted_text']. "
             "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data (e.g., calculating averages across all tables). "
             "Do not assume specific column names. Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on keywords from the question (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Convert all column names to strings using `df.columns = df.columns.astype(str)` before fuzzy matching to handle non-string columns. "
@@ -440,7 +447,7 @@ async def process_question(question: str):
                 "For PDF files, read using pdfplumber.open(file_path). Try extracting text with page.extract_text(). If no text is found, try OCR with pytesseract.image_to_string(page.to_image().original) for image-based PDFs, then extract tables with page.extract_tables(). "
                 "For Excel files, read using pandas.read_excel(file_path). "
                 "For CSV files, read using pandas.read_csv(file_path). "
-                "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
+                "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions to extract specific values "
                 "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
                 "In some cases like company financials, or company stock price, it can be in any currency."
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
@@ -450,6 +457,7 @@ async def process_question(question: str):
                 "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data."
                 "Generate Python code only, executable locally, and store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source. "
                 "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
+                "For images, store extracted text in `global_vars['extracted_text']` and parse it for specific values using regular expressions.
                 "For specific questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
                 "For plots, use matplotlib with figsize=(4,3), dpi=100, and encode to base64 using BytesIO, ensuring the base64 string is under 100,000 bytes (use format='png', reduce DPI if needed). "
                 "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
@@ -599,6 +607,8 @@ async def process_question(question: str):
         metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
         metadata_info += "\nSample data (first 5 rows):\n" + str(global_vars['df'].head(5))
         global_vars['dfs']['default'] = global_vars['df']
+    elif 'extracted_text' in global_vars and global_vars['extracted_text']:
+        metadata_info = f"\nExtracted Text:\n{global_vars['extracted_text']}"
     logger.info(f"DataFrame Metadata:\n{metadata_info}")
 
     
