@@ -205,9 +205,13 @@ def clean_numeric_value(value):
         
         # Remove currency symbols, percentage, T, and any alphabetic prefix (including normalized superscripts)
         value = re.sub(r'^[a-zA-Z]+', '', value)  # Remove leading alphabetic characters
-        value = re.sub(r'[\$₹€%T]', '', value)    # Remove specific symbols
+        value = re.sub(r'[\$₹€T]', '', value)     # Remove specific symbols
         
-        if 'billion' in value or 'bn' in value:
+        # Handle percentage values
+        if '%' in value:
+            value = re.sub(r'[^\d.e-]', '', value)  # Remove all non-numeric except decimal, e, and minus
+            return float(value) / 100  # Convert percentage to decimal
+        elif 'billion' in value or 'bn' in value:
             value = float(re.sub(r'[^\d.e-]', '', value.replace('billion', '').replace('bn', ''))) * 1e9
         elif 'million' in value or 'mn' in value:
             value = float(re.sub(r'[^\d.e-]', '', value.replace('million', '').replace('mn', ''))) * 1e6
@@ -233,6 +237,7 @@ def infer_column_types(df):
             continue
         
         try:
+            cleaned_sample = sample.apply(clean_numeric_value)
             numeric_sample = pd.to_numeric(sample, errors='coerce')
             if numeric_sample.notna().sum() >= len(sample) * 0.7:
                 numeric_cols.append(col)
@@ -397,7 +402,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Select columns based on question context and data types (numeric for metrics, categorical for identifiers, temporal for dates). "
             "Identify numeric, categorical, and temporal columns dynamically after cleaning data. "
             "Preserve categorical columns like 'Name', 'Symbol'. "
-            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
+            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like like '$1,234', '1.2 billion', '1.2%', or '-0.13%'. "
             "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
             "Extract fields dynamically based on question context using flexible regular expressions and fuzzy matching (fuzzywuzzy.fuzz.partial_ratio). "
             "For web scraping, select the correct table by checking for relevant columns"
