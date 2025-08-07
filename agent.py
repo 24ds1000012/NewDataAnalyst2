@@ -402,7 +402,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Select columns based on question context and data types (numeric for metrics, categorical for identifiers, temporal for dates). "
             "Identify numeric, categorical, and temporal columns dynamically after cleaning data. "
             "Preserve categorical columns like 'Name', 'Symbol'. "
-            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like like '$1,234', '1.2 billion', '1.2%', or '-0.13%'. "
+            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like '$1,234','Rs1,234', '1.2 billion', '1.2%', or '-0.13%'. "
             "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
             "Extract fields dynamically based on question context using flexible regular expressions and fuzzy matching (fuzzywuzzy.fuzz.partial_ratio). "
             "For web scraping, select the correct table by checking for relevant columns"
