@@ -267,9 +267,9 @@ def extract_keywords(question):
     words = re.findall(r'\w+', question.lower())
     keyword_set = set()
     for word in words:
-        if len(word) > 3 and not word.isdigit():  # Basic filter for meaningful words
+        if len(word) > 5 and not word.isdigit():  # Basic filter for meaningful words
             keyword_set.add(word)
-    return
+    return keyword_set
 
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
