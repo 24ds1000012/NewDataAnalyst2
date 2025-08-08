@@ -325,7 +325,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
             "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
             "Do not assume specific column names like 'Name'. "
-            "  Use relaxed fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to identify relevant columns. Accept matches with a similarity score as low as 50–60% "
+            "Use relaxed fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to identify relevant columns. Accept matches with a similarity score as low as 50–60% "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
         )
@@ -391,9 +391,9 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "KeyError" in error_message.lower():
         error_guidance += (
             "\nA column name mismatch occurred . "
-            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to map actual column names . "
+            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) tto dynamically map column names based on context "
             "Inspect DataFrame columns with df.columns.tolist() and log them. "
-            "Select columns dynamically based on question context and available columns."
+            "Select columns dynamically using fuzzy matching with thresholds (e.g., > 70) for identifiers."
         )
 
     messages.append({
@@ -458,6 +458,7 @@ async def process_question(question: str):
                 "Generate Python code only, executable locally, and store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source. "
                 "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
                 "For images, store extracted text in `global_vars['extracted_text']` and parse it for specific values using regular expressions."
+                "After selecting a table, use fuzzy matching to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
                 "For specific questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
                 "For plots, use matplotlib with figsize=(4,3), dpi=100, and encode to base64 using BytesIO, ensuring the base64 string is under 100,000 bytes (use format='png', reduce DPI if needed). "
                 "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
@@ -521,6 +522,7 @@ async def process_question(question: str):
             "For web scraping, inspect all tables, print their column headings, and select the most relevant table based on the question’s context. "
             "If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables. "
             "Inspect all tables, print their column headings, and select the most relevant table based on the question’s context." 
+            "After selecting a table, use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "                
             "Describe how to clean and analyze data dynamically, selecting columns based on context and data types."
         )
@@ -551,6 +553,7 @@ async def process_question(question: str):
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
                 "Use the correct import: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
                 "Extract data using regular expressions or table parsing to answer the question’s requirements."
+                "After selecting a table, use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
                 "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
                 "Convert all table column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching to handle non-string columns. "
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
@@ -619,6 +622,7 @@ async def process_question(question: str):
             f"The dataframe metadata is:\n{metadata_info}\n\n"
             "Generate Python code to answer the question. Use the preprocessed DataFrames in `dfs`"
             "Determine which DataFrame to use based on the question context. "# (e.g., use dfs['data.pdf'] for questions about subjects and averages, dfs['exc.xlsx'] for questions about product demand). "
+            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Inspect columns and infer types (numeric, categorical, temporal) using `infer_column_types`. "
             "Select columns based on question context"
