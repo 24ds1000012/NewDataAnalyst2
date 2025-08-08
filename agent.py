@@ -262,14 +262,50 @@ def infer_column_types(df):
     
     return numeric_cols, categorical_cols, temporal_cols
 
-def extract_keywords(question):
-    # Simple keyword extraction based on word frequency and noun-like patterns
-    words = re.findall(r'\w+', question.lower())
-    keyword_set = set()
-    for word in words:
-        if len(word) > 5 and not word.isdigit():  # Basic filter for meaningful words
-            keyword_set.add(word)
-    return keyword_set
+async def extract_keywords(question):
+    """
+    Extract keywords from the question using OpenAI and log them.
+    
+    Args:
+        question (str): The input question to extract keywords from.
+    
+    Returns:
+        set: A set of extracted keywords.
+    """
+    # Prepare the prompt for OpenAI
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a keyword extraction tool. Given a question, identify and return a list of meaningful keywords "
+                "(nouns, proper nouns, or significant terms) that capture the main topics or entities. "
+                "Exclude common words (e.g., 'the', 'is', 'what') and focus on terms relevant to the question's context. "
+                "Return the keywords as a comma-separated string."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"Extract keywords from this question: {question}"
+        }
+    ]
+    
+    try:
+        # Call OpenAI API to extract keywords
+        response = await ask_gpt(messages)
+        logger.info(f"OpenAI keyword extraction response: {response}")
+        
+        # Process the response into a set of keywords
+        keywords = {word.strip().lower() for word in response.split(',') if word.strip()}
+        logger.info(f"Extracted keywords: {keywords}")
+        
+        return keywords
+    except Exception as e:
+        logger.error(f"Failed to extract keywords with OpenAI: {e}")
+        # Fallback to simple regex-based keyword extraction
+        words = re.findall(r'\w+', question.lower())
+        keyword_set = {word for word in words if len(word) > 5 and not word.isdigit()}
+        logger.info(f"Fallback extracted keywords: {keyword_set}")
+        return keyword_set
 
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
@@ -519,7 +555,7 @@ async def process_question(question: str):
     else:
         logger.info("No attachments specified; proceeding with question processing")
 
-    keywords = extract_keywords(question)
+    keywords = await extract_keywords(question)
         
     messages.append({
         "role": "user",
