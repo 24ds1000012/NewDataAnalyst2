@@ -518,6 +518,8 @@ async def process_question(question: str):
             return {"error": "Failed to extract file paths", "details": str(e)}
     else:
         logger.info("No attachments specified; proceeding with question processing")
+
+    keywords = extract_keywords(question)
         
     messages.append({
         "role": "user",
