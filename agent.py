@@ -262,6 +262,15 @@ def infer_column_types(df):
     
     return numeric_cols, categorical_cols, temporal_cols
 
+def extract_keywords(question):
+    # Simple keyword extraction based on word frequency and noun-like patterns
+    words = re.findall(r'\w+', question.lower())
+    keyword_set = set()
+    for word in words:
+        if len(word) > 3 and not word.isdigit():  # Basic filter for meaningful words
+            keyword_set.add(word)
+    return
+
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
     if "HTTPConnectionPool" in error_message or "timeout" in error_message.lower():
@@ -377,7 +386,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "no relevant table found" in error_message.lower():
         error_guidance += (
             "\nNo table was selected due to overly restrictive fuzzy matching. "
-            "Relax fuzzy matching to select a table if it contains at least one column matching keywords from the question with a score > 60. Prioritize tables with keywords if the question mentions mentions those keywords. Inspect all table columns and log them. Use fuzzy matching to map column names dynamically."
+            "Extract keywords from the question and use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) with a threshold > 60 to score and select the most relevant table. "
             "Inspect all table columns and log them. Use fuzzy matching to map column names ."
         )
     if "no valid DataFrame or extracted text created" in error_message.lower():
@@ -391,6 +400,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "KeyError" in error_message.lower():
         error_guidance += (
             "\nA column name mismatch occurred . "
+            "Extract keywords from the question to guide column mapping. "
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) tto dynamically map column names based on context "
             "Inspect DataFrame columns with df.columns.tolist() and log them. "
             "Select columns dynamically using fuzzy matching with thresholds (e.g., > 70) for identifiers."
@@ -513,6 +523,7 @@ async def process_question(question: str):
         "role": "user",
         "content": (
             f"Analyze and break down this task into clear steps: {question}. "
+            f"Extracted keywords from the question: {keywords}. "
             f"{'The question includes attachments with file paths: ' + str(file_paths) if file_paths else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
             "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
