@@ -377,7 +377,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     if "no relevant table found" in error_message.lower():
         error_guidance += (
             "\nNo table was selected due to overly restrictive fuzzy matching. "
-            "Relax fuzzy matching to select a table if it contains at least one column matching "
+            "Relax fuzzy matching to select a table if it contains at least one column matching keywords from the question with a score > 60. Prioritize tables with keywords if the question mentions mentions those keywords. Inspect all table columns and log them. Use fuzzy matching to map column names dynamically."
             "Inspect all table columns and log them. Use fuzzy matching to map column names ."
         )
     if "no valid DataFrame or extracted text created" in error_message.lower():
