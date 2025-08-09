@@ -317,7 +317,15 @@ def infer_column_types(df):
             categorical_cols.append(col)
             logger.warning(f"Column '{col}' has insufficient data; defaulting to categorical.")
             continue
-        
+
+        # Check if column heading contains "name" (case-insensitive, fuzzy matching)
+        if fuzz.partial_ratio('name', str(col).lower()) > 70:
+            categorical_cols.append(col)
+            global_vars['column_map'][col] = 'categorical'
+            logger.info(f"Column '{col}' categorized as categorical due to 'name' in heading (fuzzy match)")
+            logger.info(f"Sample data for '{col}': {sample.tolist()}")
+            continue
+            
         all_numeric = True
         cleaned_sample = []
         for val in sample:
