@@ -9,7 +9,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import numpy as np
-from json_repair import repair_json
+from json_repair import repair_jsonf
 import requests
 from bs4 import BeautifulSoup
 import certifi
@@ -336,6 +336,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
             "Do not assume specific column names like 'Name'. "
             "Use relaxed fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to identify relevant columns. Accept matches with a similarity score as low as 50–60% "
+            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
         )
