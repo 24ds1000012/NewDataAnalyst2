@@ -714,7 +714,7 @@ async def process_question(question: str):
                 df.info(buf=buffer)
                 buffer.seek(0)
                 metadata_info += f"\nFile: {filename}\n{buffer.getvalue()}"
-                numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
+                numeric_cols, categorical_cols, temporal_cols = infer_column_types(df, global_vars)
                 metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
                 metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
                 metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
@@ -726,7 +726,7 @@ async def process_question(question: str):
         global_vars['df'].info(buf=buffer)
         buffer.seek(0)
         metadata_info = f"\nSingle DataFrame:\n{buffer.getvalue()}"
-        numeric_cols, categorical_cols, temporal_cols = infer_column_types(global_vars['df'])
+        numeric_cols, categorical_cols, temporal_cols = infer_column_types(global_vars['df'], global_vars)
         metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
         metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
         metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
