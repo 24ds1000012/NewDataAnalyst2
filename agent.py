@@ -132,6 +132,21 @@ async def safe_execute(code_blocks, global_vars):
         global_vars['dfs'] = {}
     if 'column_map' not in global_vars:
         global_vars['column_map'] = {}
+
+    # Add core libraries to global_vars by default
+    global_vars['pd'] = pd
+    global_vars['np'] = np
+    global_vars['plt'] = plt
+    global_vars['base64'] = base64
+    global_vars['BytesIO'] = BytesIO
+    global_vars['StringIO'] = StringIO
+    global_vars['json'] = json
+    global_vars['re'] = re
+    global_vars['logging'] = logging
+    global_vars['os'] = os
+    global_vars['requests'] = requests
+    global_vars['BeautifulSoup'] = BeautifulSoup
+    global_vars['certifi'] = certifi
     
     for idx, code in enumerate(code_blocks):
         try:
