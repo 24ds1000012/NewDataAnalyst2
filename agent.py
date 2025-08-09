@@ -77,6 +77,36 @@ def extract_code_blocks(response):
 
 async def safe_execute(code_blocks, global_vars):
     from selenium.webdriver.chrome.service import Service
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import base64
+    from io import BytesIO, StringIO
+    import json
+    import re
+    import logging
+    from openai import OpenAI
+    from dotenv import load_dotenv
+    import os
+    import numpy as np
+    from json_repair import repair_json
+    import requests
+    from bs4 import BeautifulSoup
+    import certifi
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.options import Options
+    from webdriver_manager.chrome import ChromeDriverManager
+    from webdriver_manager.core.os_manager import ChromeType
+    from sklearn.linear_model import LinearRegression
+    import duckdb
+    import pdfplumber
+    import tempfile
+    import pytesseract
+    import tenacity
+    from selenium.common.exceptions import WebDriverException, TimeoutException
+    from fuzzywuzzy import fuzz
 
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(3),
