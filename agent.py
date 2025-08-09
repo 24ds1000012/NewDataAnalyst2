@@ -383,13 +383,20 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nEnsure ChromeDriver is installed and accessible. Use Selenium with webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
             "Do not specify a manual path; let webdriver_manager handle it."
         )
-    if "column" in error_message.lower() or "columns" in error_message.lower() or"key" in error_message.lower():
+    if "column" in error_message.lower() or "key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
             "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
             "Do not assume specific column names like 'Name'. "
             "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
             "Use relaxed fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to identify relevant columns. Accept matches with a similarity score as low as 50–60% "
+            "Verify columns exist using df.columns before processing. Log available columns for debugging."
+            "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
+        )
+    if "columns" in error_message.lower() or "keys" in error_message.lower():
+        error_guidance += (
+            "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
+            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
         )
