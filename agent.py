@@ -9,7 +9,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import numpy as np
-from json_repair import repair_jsonf
+from json_repair import repair_json
 import requests
 from bs4 import BeautifulSoup
 import certifi
