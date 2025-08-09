@@ -660,6 +660,17 @@ async def process_question(question: str):
         )
     })
 
+    def to_json_safe(obj):
+    """Recursively convert NumPy types and other non-serializable objects to JSON-safe formats."""
+    if isinstance(obj, (np.integer, np.floating)):
+        return obj.item()  # Convert to Python int/float
+    elif isinstance(obj, (list, tuple)):
+        return [to_json_safe(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: to_json_safe(v) for k, v in obj.items()}
+    else:
+        return obj
+
     final_attempt = 0
     while final_attempt < MAX_ATTEMPTS:
         final_attempt += 1
@@ -690,6 +701,9 @@ async def process_question(question: str):
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse result as JSON: {e}")
                 return {"error": "Result is a string but not valid JSON", "details": str(e)}
+
+        # Convert to JSON-safe format (fixes NumPy serialization issues)
+        result = to_json_safe(result)
 
         # Validate that the result is JSON-serializable
         try:
