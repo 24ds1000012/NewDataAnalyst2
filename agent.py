@@ -100,6 +100,8 @@ async def safe_execute(code_blocks, global_vars):
     # Initialize dfs if not already present
     if 'dfs' not in global_vars:
         global_vars['dfs'] = {}
+    if 'column_map' not in global_vars:
+        global_vars['column_map'] = {}
     
     for idx, code in enumerate(code_blocks):
         try:
@@ -139,12 +141,13 @@ async def safe_execute(code_blocks, global_vars):
                 exec(code.strip(), global_vars, local_vars)
 
             # Update global_vars with local_vars
-            global_vars.update({k: v for k, v in local_vars.items() if k in ['df', 'dfs', 'result']})
-
+            global_vars.update({k: v for k, v in local_vars.items() if k in ['df', 'dfs', 'result', 'column_map']})
+            
             # Log dfs contents for debugging
             logger.info(f"global_vars['dfs'] keys: {list(global_vars.get('dfs', {}).keys())}")
+            logger.info(f"global_vars['column_map'] after execution: {global_vars.get('column_map', {})}")
 
-            # Validate DataFrames
+        # Validate DataFrames
             has_valid_data = False
             if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
                 for filename, df in global_vars['dfs'].items():
@@ -651,6 +654,7 @@ async def process_question(question: str):
             "Generate Python code to answer the question. Use the preprocessed DataFrames in `dfs`"
             "Determine which DataFrame to use based on the question context. "# (e.g., use dfs['data.pdf'] for questions about subjects and averages, dfs['exc.xlsx'] for questions about product demand). "
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
+            "Store the column mappings in a `column_map` dictionary and ensure it is assigned to `global_vars['column_map']` for persistence across execution steps."
             "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
             "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
