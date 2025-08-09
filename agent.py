@@ -234,6 +234,7 @@ def clean_numeric_value(value):
 
 def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
+    date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d']  # Common formats
     for col in df.columns:
         sample = df[col].dropna().head(10)
         if len(sample) < 2:
@@ -260,9 +261,10 @@ def infer_column_types(df):
                 pass
         
         try:
-            temporal_sample = pd.to_datetime(sample, errors='coerce')
+            temporal_sample = pd.to_datetime(sample, format=date_format, errors='coerce')
             if temporal_sample.notna().sum() >= len(sample) * 0.7:
                 temporal_cols.append(col)
+                logger.info(f"Column '{col}' detected as temporal with format '{date_format}'")
                 continue
         except:
             pass
@@ -270,7 +272,6 @@ def infer_column_types(df):
         categorical_cols.append(col)
     
     return numeric_cols, categorical_cols, temporal_cols
-
 
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
@@ -528,8 +529,8 @@ async def process_question(question: str):
             f"{'The question includes attachments with file paths: ' + str(file_paths) if file_paths else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
             "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
-            "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
-            "When generating SQL queries for DuckDB, avoid using JULIANDAY, DATE, or DATE_DIFF functions for date calculations. For date parsing, use STRPTIME(column, '%d-%m-%Y')::DATE to handle dates in DD-MM-YYYY format (e.g., '01-01-1995'). For calculating the difference in days between two dates, use DATE_SUB('day', start_date, end_date), e.g., DATE_SUB('day', STRPTIME(date_of_registration, '%d-%m-%Y')::DATE, STRPTIME(decision_date, '%d-%m-%Y')::DATE). For date formatting, use STRFTIME, e.g., STRFTIME('%Y-%m-%d', column_name). Ensure the final query output is stored in a DataFrame assigned to the variable result. Validate that all date columns are in the correct format before performing calculations."
+            "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets to avoid excessive data loading. "
+            "When generating SQL queries for DuckDB, avoid using JULIANDAY, DATE, or DATE_DIFF functions for date calculations. For date parsing, use STRPTIME(column, '%d-%m-%Y')::DATE for DD-MM-YYYY format or STRPTIME(column, '%Y-%m-%d')::DATE for YYYY-MM-DD format, based on sample data. For calculating the difference in days between two dates, use DATE_SUB('day', start_date, end_date). For date formatting, use STRFTIME('%Y-%m-%d', column_name). Validate date formats by sampling data before querying."
             "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
             "For PDF files with multiple tables, concatenate all tables into a single DataFrame using pd.concat(tables, ignore_index=True) to ensure all data is aggregated for analysis. "
             "For remote PDF files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
