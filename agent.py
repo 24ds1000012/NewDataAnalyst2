@@ -229,7 +229,7 @@ def clean_numeric_value(value):
         return float(value)
     except (ValueError, TypeError):
         logger.error(f"Failed to clean value '{value}': returning np.nan")
-        return np.nan
+        return value
         
 
 def infer_column_types(df):
@@ -241,17 +241,26 @@ def infer_column_types(df):
             logger.warning(f"Column '{col}' has insufficient data; defaulting to categorical.")
             continue
         
-        try:
-            cleaned_sample = sample.apply(clean_numeric_value)
-            numeric_sample = pd.to_numeric(sample, errors='coerce')
-            if numeric_sample.notna().sum() >= len(sample) * 0.7:
-                numeric_cols.append(col)
-                continue
-        except:
-            pass
+        all_numeric = True
+        cleaned_sample = []
+        for val in sample:
+            cleaned_val = clean_numeric_value(val)
+            if isinstance(cleaned_val, str):  # If clean_numeric_value returns string, it's not numeric
+                all_numeric = False
+                break
+            cleaned_sample.append(cleaned_val)
+        
+        if all_numeric:
+            try:
+                numeric_sample = pd.to_numeric(cleaned_sample, errors='coerce')
+                if numeric_sample.notna().sum() >= len(sample) * 0.7:
+                    numeric_cols.append(col)
+                    continue
+            except:
+                pass
         
         try:
-            temporal_sample = pd.to_datetime(sample, errors='coerce', infer_datetime_format=True)
+            temporal_sample = pd.to_datetime(sample, errors='coerce')
             if temporal_sample.notna().sum() >= len(sample) * 0.7:
                 temporal_cols.append(col)
                 continue
