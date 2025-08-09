@@ -229,7 +229,7 @@ def clean_numeric_value(value):
         return float(value)
     except (ValueError, TypeError):
         logger.error(f"Failed to clean value '{value}': returning np.nan")
-        return value
+        return np.nan
         
 
 def infer_column_types(df):
