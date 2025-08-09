@@ -661,15 +661,15 @@ async def process_question(question: str):
     })
 
     def to_json_safe(obj):
-    """Recursively convert NumPy types and other non-serializable objects to JSON-safe formats."""
-    if isinstance(obj, (np.integer, np.floating)):
-        return obj.item()  # Convert to Python int/float
-    elif isinstance(obj, (list, tuple)):
-        return [to_json_safe(x) for x in obj]
-    elif isinstance(obj, dict):
-        return {k: to_json_safe(v) for k, v in obj.items()}
-    else:
-        return obj
+        #Recursively convert NumPy types and other non-serializable objects to JSON-safe formats."""
+        if isinstance(obj, (np.integer, np.floating)):
+            return obj.item()  # Convert to Python int/float
+        elif isinstance(obj, (list, tuple)):
+            return [to_json_safe(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: to_json_safe(v) for k, v in obj.items()}
+        else:
+            return obj
 
     final_attempt = 0
     while final_attempt < MAX_ATTEMPTS:
