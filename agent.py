@@ -319,7 +319,7 @@ def infer_column_types(df):
             continue
 
         # Check if column heading contains "name" (case-insensitive, fuzzy matching)
-        if fuzz.partial_ratio('name', str(col).lower()) > 70:
+        if fuzz.partial_ratio('name', str(col).lower()) > 60:
             categorical_cols.append(col)
             global_vars['column_map'][col] = 'categorical'
             logger.info(f"Column '{col}' categorized as categorical due to 'name' in heading (fuzzy match)")
