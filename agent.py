@@ -271,51 +271,6 @@ def infer_column_types(df):
     
     return numeric_cols, categorical_cols, temporal_cols
 
-async def extract_keywords(question):
-    """
-    Extract keywords from the question using OpenAI and log them.
-    
-    Args:
-        question (str): The input question to extract keywords from.
-    
-    Returns:
-        set: A set of extracted keywords.
-    """
-    # Prepare the prompt for OpenAI
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a keyword extraction tool. Given a question, identify and return a list of meaningful keywords "
-                "(nouns, proper nouns, or significant terms) that capture the main topics or entities. "
-                "Include temporal terms (e.g., 'year', 'date') if the question involves time-based filtering "
-                "Exclude common words (e.g., 'the', 'is', 'what') and focus on terms relevant to the question's context. "
-                "Return the keywords as a comma-separated string."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"Extract keywords from this question: {question}"
-        }
-    ]
-    
-    try:
-        # Call OpenAI API to extract keywords
-        response = await ask_gpt(messages)
-        logger.info(f"OpenAI keyword extraction response: {response}")
-        
-        # Process the response into a set of keywords
-        keywords = {word.strip().lower() for word in response.split(',') if word.strip()}
-        logger.info(f"Extracted keywords: {keywords}")
-        
-        return keywords
-    except Exception as e:
-        logger.error(f"Failed to extract keywords with OpenAI: {e}")
-        # Fallback to simple regex-based keyword extraction
-        words = re.findall(r'\w+', question.lower())
-        keyword_set = {word for word in words if len(word) > 5 and not word.isdigit()}
-        logger.info(f"Fallback extracted keywords: {keyword_set}")
-        return keyword_set
 
 async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
@@ -565,13 +520,11 @@ async def process_question(question: str):
     else:
         logger.info("No attachments specified; proceeding with question processing")
 
-    keywords = await extract_keywords(question)
         
     messages.append({
         "role": "user",
         "content": (
             f"Analyze and break down this task into clear steps: {question}. "
-            f"Extracted keywords from the question: {keywords}. "
             f"{'The question includes attachments with file paths: ' + str(file_paths) if file_paths else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
             "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
