@@ -40,6 +40,7 @@ client = OpenAI(api_key=api_key)
 MAX_ATTEMPTS = 5
 
 def initialize_duckdb():
+    import duckdb
     duckdb_dir = os.getenv("DUCKDB_HOME", "/tmp/duckdb")
     try:
         logger.info(f"Initializing DuckDB with database path: {duckdb_dir}/duckdb.db")
@@ -49,7 +50,14 @@ def initialize_duckdb():
         con.execute("SET http_timeout=30000")
         con.execute("INSTALL httpfs; LOAD httpfs;")
         con.execute("INSTALL parquet; LOAD parquet;")
-        con.execute("SET hive_partitioning = true;")
+
+        duckdb_version = tuple(map(int, duckdb.__version__.split('.')))
+        if duckdb_version >= (0, 9, 0):
+            logger.info("DuckDB version supports hive_partitioning; setting globally")
+            con.execute("SET hive_partitioning = true;")
+        else:
+            logger.info("DuckDB version does not support SET hive_partitioning; will use read_parquet parameter")
+
         con.execute("SET s3_use_ssl = true;")
         con.execute("SET s3_access_key_id = '';")
         con.execute("SET s3_secret_access_key = '';")
