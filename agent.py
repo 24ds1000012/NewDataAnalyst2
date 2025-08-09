@@ -356,6 +356,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nSelenium timed out while loading the page. Increase WebDriverWait timeout to 30 seconds and use EC.presence_of_element_located((By.TAG_NAME, 'table')). "
             "Add a timeout parameter to requests.get (e.g., timeout=30). Ensure network stability."
         )
+    if "HTTP Error: HTTP GET error" in error_message.lower() or "HTTP 403" in error_message.lower():
+        error_guidance += (
+            "\nFailed to access S3 bucket due to an HTTP 403 (Forbidden) error. "
+            "For public S3 buckets, ensure the bucket has public read access (e.g., 'GetObject' permission for 'Principal: \"*\"' in the bucket policy). "
+            "Verify the S3 bucket and path exist and are correct. "
+            "Test S3 access with a minimal DuckDB query to confirm connectivity."
+        )
     if "could not convert string to float" in error_message:
         error_guidance += (
             "\nCheck for non-numeric prefixes, suffixes, superscripts or annotations in numeric columns. "
