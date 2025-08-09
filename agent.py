@@ -176,6 +176,7 @@ async def safe_execute(code_blocks, global_vars):
                     logger.info(f"Added custom function '{func}' to global_vars")
                     
             if 'duckdb' in code:
+                global_vars['duckdb'] = duckdb
                 global_vars['con'] = initialize_duckdb()
             if 'webdriver' in code:
                 driver = init_selenium()
