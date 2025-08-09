@@ -49,12 +49,12 @@ def initialize_duckdb():
         con.execute("SET http_timeout=30000")
         con.execute("INSTALL httpfs; LOAD httpfs;")
         con.execute("INSTALL parquet; LOAD parquet;")
-        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-        if aws_access_key and aws_secret_key:
-            con.execute(f"SET s3_access_key_id='{aws_access_key}'")
-            con.execute(f"SET s3_secret_access_key='{aws_secret_key}'")
-        con.execute("SET s3_region='ap-south-1'")
+        con.execute("SET hive_partitioning = true;")
+        con.execute("SET s3_use_ssl = true;")
+        con.execute("SET s3_access_key_id = '';")
+        con.execute("SET s3_secret_access_key = '';")
+        #aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+        #aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         return con
     except Exception as e:
         logger.error(f"Failed to initialize DuckDB: {e}", exc_info=True)
