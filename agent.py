@@ -383,7 +383,7 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "\nEnsure ChromeDriver is installed and accessible. Use Selenium with webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
             "Do not specify a manual path; let webdriver_manager handle it."
         )
-    if "column" in error_message.lower() or "key" in error_message.lower():
+    if "column" in error_message.lower() or or "columns" in error_message.lower() or"key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
             "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
