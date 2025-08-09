@@ -288,6 +288,8 @@ async def extract_keywords(question):
             "content": (
                 "You are a keyword extraction tool. Given a question, identify and return a list of meaningful keywords "
                 "(nouns, proper nouns, or significant terms) that capture the main topics or entities. "
+                "Include temporal terms (e.g., 'year', 'date') if the question involves time-based filtering "
+                "(e.g., 'before 2020', 'earliest').
                 "Exclude common words (e.g., 'the', 'is', 'what') and focus on terms relevant to the question's context. "
                 "Return the keywords as a comma-separated string."
             )
