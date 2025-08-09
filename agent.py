@@ -663,6 +663,7 @@ async def process_question(question: str):
             "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
             "The output format depends on the question: for questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
             "Assign the final output to a variable named `result` (e.g., result = [...]). Do not only print the output; ensure it is assigned to `result`. "
+            "Store the result in `global_vars['result']` and update `global_vars['dfs']` with any created DataFrames."
             "Validate that the output matches the expected type and structure before returning."
         )
     })
