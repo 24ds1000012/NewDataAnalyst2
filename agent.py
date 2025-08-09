@@ -104,6 +104,7 @@ async def safe_execute(code_blocks, global_vars):
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
+            local_vars = {}
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
             if 'webdriver' in code:
@@ -135,33 +136,36 @@ async def safe_execute(code_blocks, global_vars):
                     exec(code.strip(), global_vars)
                 await asyncio.run(run_async_code())
             else:
-                exec(code.strip(), global_vars)
+                exec(code.strip(), global_vars, local_vars)
+
+            # Update global_vars with local_vars
+            global_vars.update({k: v for k, v in local_vars.items() if k in ['df', 'dfs', 'result']})
 
             # Log dfs contents for debugging
             logger.info(f"global_vars['dfs'] keys: {list(global_vars.get('dfs', {}).keys())}")
 
-            # Validate DataFrame storage
-            #has_valid_df = False
+            # Validate DataFrames
             has_valid_data = False
             if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
                 for filename, df in global_vars['dfs'].items():
                     if isinstance(df, pd.DataFrame) and not df.empty:
                         logger.info(f"Loaded DataFrame for {filename} with columns: {list(df.columns)}")
-                        #has_valid_df = True
                         has_valid_data = True
                     else:
                         logger.warning(f"Invalid or empty DataFrame for {filename}: {type(df)}")
             if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame) and not global_vars['df'].empty:
                 logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
                 global_vars['dfs']['default'] = global_vars['df']
-                #has_valid_df = True
                 has_valid_data = True
             elif 'extracted_text' in global_vars and global_vars['extracted_text']:
                 logger.info(f"Extracted text: {global_vars['extracted_text']}")
                 has_valid_data = True
-            if not has_valid_data:
-                logger.error("No valid non-empty DataFrame created.")
-                return False, "No valid DataFrame or extracted text created."
+            if not has_valid_data and 'result' not in global_vars:
+                logger.error("No valid non-empty DataFrame or result created.")
+                return False, "No valid DataFrame, extracted text, or result created."
+            if 'result' in global_vars:
+                logger.info(f"Result found: {global_vars['result']}")
+                return True, global_vars['result']
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
@@ -172,7 +176,7 @@ async def safe_execute(code_blocks, global_vars):
                     logger.info("Selenium driver closed.")
                 except Exception as e:
                     logger.warning(f"Failed to close Selenium driver: {e}")
-    return True, None
+    return True, global_vars.get('result', None)
     
 # Mapping of superscript digits to ASCII digits
 SUPERSCRIPT_DIGIT_MAP = {
