@@ -308,7 +308,7 @@ def clean_numeric_value(value):
         return np.nan
         
 
-def infer_column_types(df):
+def infer_column_types(df, global_vars):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
     date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d']  # Common formats
     for col in df.columns:
