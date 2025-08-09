@@ -147,11 +147,34 @@ async def safe_execute(code_blocks, global_vars):
     global_vars['requests'] = requests
     global_vars['BeautifulSoup'] = BeautifulSoup
     global_vars['certifi'] = certifi
+    #global_vars['duckdb'] = duckdb
+    
     
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
             local_vars = {}
+
+            # Add custom functions to global_vars if defined in the code
+            custom_functions = ['clean_numeric_value', 'fetch_parquet_data', 'process_pdf', 'process_excel', 'process_csv', 'process_image', 'scrape_web_data']
+            for func in custom_functions:
+                if func in code:
+                    if func == 'clean_numeric_value':
+                        global_vars['clean_numeric_value'] = clean_numeric_value
+                    elif func == 'fetch_parquet_data':
+                        global_vars['fetch_parquet_data'] = globals().get('fetch_parquet_data', lambda: None)
+                    elif func == 'process_pdf':
+                        global_vars['process_pdf'] = globals().get('process_pdf', lambda x: None)
+                    elif func == 'process_excel':
+                        global_vars['process_excel'] = globals().get('process_excel', lambda x: None)
+                    elif func == 'process_csv':
+                        global_vars['process_csv'] = globals().get('process_csv', lambda x: None)
+                    elif func == 'process_image':
+                        global_vars['process_image'] = globals().get('process_image', lambda x: None)
+                    elif func == 'scrape_web_data':
+                        global_vars['scrape_web_data'] = globals().get('scrape_web_data', lambda x: None)
+                    logger.info(f"Added custom function '{func}' to global_vars")
+                    
             if 'duckdb' in code:
                 global_vars['con'] = initialize_duckdb()
             if 'webdriver' in code:
