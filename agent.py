@@ -429,7 +429,6 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             "Use the correct import for ChromeType: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
             "For JavaScript-rendered content, use Selenium with ChromeDriverManager to handle WebDriver setup. "
             "For S3-based Parquet files, use DuckDB with hive_partitioning=True and limit queries to relevant subsets. "
-            "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "
             "For plots, ensure base64 string is under 100,000 bytes by using format='png', figsize=(4,3), and dpi=80; reduce DPI further if needed."
             "Assign the final output to a variable named `result` (e.g., result = [...])."
         )
@@ -530,6 +529,7 @@ async def process_question(question: str):
             "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
             "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
+            "When generating SQL queries for DuckDB, do not use the JULIANDAY function for date calculations. Instead, use direct date arithmetic (e.g., DATE '2025-08-09' - DATE '2025-01-01' for day differences), STRFTIME for date formatting (e.g., STRFTIME('%Y-%m-%d', column_name)), or DATE_TRUNC for truncating dates (e.g., DATE_TRUNC('day', column_name)). "            "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "
             "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
             "For PDF files with multiple tables, concatenate all tables into a single DataFrame using pd.concat(tables, ignore_index=True) to ensure all data is aggregated for analysis. "
             "For remote PDF files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
@@ -574,7 +574,8 @@ async def process_question(question: str):
                 "Extract data using regular expressions or table parsing to answer the question’s requirements."
                 "After selecting a table, use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
                 "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
-                
+                "When generating SQL queries for DuckDB, do not use the JULIANDAY function for date calculations. Instead, use direct date arithmetic (e.g., DATE '2025-08-09' - DATE '2025-01-01' for day differences), STRFTIME for date formatting (e.g., STRFTIME('%Y-%m-%d', column_name)), or DATE_TRUNC for truncating dates (e.g., DATE_TRUNC('day', column_name)). " 
+                "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "                
                 "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
                 "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
                 "Convert all table column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching to handle non-string columns. "
