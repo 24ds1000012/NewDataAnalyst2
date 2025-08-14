@@ -3,14 +3,12 @@ from fastapi.responses import JSONResponse
 from agent import process_question
 import uvicorn
 import traceback
-import json
 import asyncio
 import logging
 import tempfile
 import os
-from starlette.datastructures import UploadFile as StarletteUploadFile  # Import Starlette UploadFile
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -24,93 +22,133 @@ async def root():
     return {"status": "Running"}
 
 @app.post("/api/")
-async def analyze(
-    request: Request,
-    questions_txt: UploadFile = File(None, alias="file"),  # Optional 'file' field
-    questions_txt_alt: UploadFile = File(None, alias="questions.txt"),  # Optional 'questions.txt' field
-    attachments: list[UploadFile] = File(None, alias="attachments")
-):
+async def analyze(request: Request):
+    # Initialize variables
+    question_file = None
+    attachments = []
     temp_file_paths = []
+
+    # Log raw request body for debugging
     try:
-        # Read the question file from either 'file' or 'questions.txt'
-        question = None
-        if questions_txt:
-            question = (await questions_txt.read()).decode("utf-8")
-            logger.info(f"Received question via 'file' field: {questions_txt.filename}")
-        elif questions_txt_alt:
-            question = (await questions_txt_alt.read()).decode("utf-8")
-            logger.info(f"Received question via 'questions.txt' field: {questions_txt_alt.filename}")
-        else:
-            raise HTTPException(status_code=400, detail="No question file provided in 'file' or 'questions.txt' field")
-
-        if not question.strip():
-            raise HTTPException(status_code=400, detail="Question file cannot be empty or contain only whitespace")
-
-        # Collect all attachments from form data
-        form = await request.form()
-        all_attachments = []
-        
-        # Log all form fields for debugging
-        logger.info(f"All form fields received: {list(form.keys())}")
-
-        # Include attachments from the 'attachments' field
-        if attachments:
-            all_attachments.extend(attachments)
-            logger.info(f"Received attachments via 'attachments' field: {[attachment.filename for attachment in attachments]}")
-
-        # Check all form fields for UploadFile instances (FastAPI or Starlette)
-        for field_name, field_value in form.items():
-            logger.debug(f"Processing field '{field_name}': type={type(field_value)}")
-            if field_name in ["file", "questions.txt"]:  # Skip question file fields
-                continue
-            if isinstance(field_value, (UploadFile, StarletteUploadFile)):  # Check both FastAPI and Starlette UploadFile
-                all_attachments.append(field_value)
-                logger.info(f"Received attachment via '{field_name}' field: {field_value.filename}")
-            elif isinstance(field_value, list) and all(isinstance(item, (UploadFile, StarletteUploadFile)) for item in field_value):
-                all_attachments.extend(field_value)
-                logger.info(f"Received attachments via '{field_name}' field: {[item.filename for item in field_value]}")
-            else:
-                logger.warning(f"Field '{field_name}' is not an UploadFile or list of UploadFiles: type={type(field_value)}")
-
-        if all_attachments:
-            logger.info(f"Total attachments received: {[attachment.filename for attachment in all_attachments]}")
-        else:
-            logger.info("No attachments received")
-
-        # Handle attachments
-        for attachment in all_attachments:
-            # Save each attachment to a temporary file
-            suffix = f".{attachment.filename.split('.')[-1]}" if '.' in attachment.filename else ""
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                content = await attachment.read()
-                if not content:
-                    logger.warning(f"Attachment {attachment.filename} is empty")
-                    continue
-                tmp_file.write(content)
-                temp_file_paths.append((attachment.filename, tmp_file.name))
-                logger.info(f"Saved attachment {attachment.filename} to {tmp_file.name}")
-
-        # Append temporary file paths to the question
-        if temp_file_paths:
-            question += "\nAttachments:\n" + "\n".join([f"{filename}: {path}" for filename, path in temp_file_paths])
-
-        # Process the question
-        logger.info(f"Total question plus attachments: {question}")
-        result = await asyncio.wait_for(process_question(question), timeout=300.0)
-        logger.info(f"Returning result: {result}")
-        return JSONResponse(content=result)
-    except asyncio.TimeoutError:
-        logger.error("Request timed out")
-        raise HTTPException(status_code=504, detail="Request timed out")
+        raw_body = await request.body()
+        logger.info(f"Raw request body: {raw_body}")
     except Exception as e:
-        logger.error(f"Error processing request: {e}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-    finally:
-        # Clean up temporary files
-        for _, temp_path in temp_file_paths:
-            try:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-                    logger.info(f"Deleted temporary file: {temp_path}")
-            except Exception as e:
-                logger.warning(f"Failed to delete temporary file {temp_path}: {e}")
+        logger.warning(f"Failed to read raw request body: {e}")
+
+    # Try parsing form data (unlikely, but kept for compatibility)
+    try:
+        form = await request.form()
+        logger.info(f"Form fields received: {dict(form.items())}")
+
+        # Identify question file and attachments
+        for field_name, field_value in form.items():
+            if isinstance(field_value, StarletteUploadFile) and field_value.filename:
+                fname = field_value.filename.lower()
+                logger.info(f"Processing UploadFile: {field_name} -> {fname}")
+                if fname.startswith("question") and fname.endswith(".txt"):
+                    if question_file:
+                        raise HTTPException(status_code=400, detail="Multiple question files provided")
+                    question_file = field_value
+                else:
+                    attachments.append(field_value)
+            else:
+                logger.warning(f"Skipping non-file field: {field_name} = {field_value}")
+
+        if not question_file:
+            raise HTTPException(status_code=400, detail="No question file provided (expected 'question*.txt')")
+
+        question_text = (await question_file.read()).decode("utf-8")
+        if not question_text.strip():
+            raise HTTPException(status_code=400, detail="Question file is empty")
+        
+        logger.info(f"Question text from file: {question_text}")
+
+    except Exception as e:
+        logger.warning(f"Form parsing failed: {e}. Attempting JSON body.")
+        # Fallback to JSON body
+        try:
+            body = await request.json()
+            logger.info(f"JSON body received: {body}")
+            # Check for 'question', 'questions', or 'questions.txt' key
+            question_key = None
+            for key in ['question', 'questions', 'questions.txt', './questions.txt']:
+                if key in body and isinstance(body[key], str) and (body[key].startswith('file://') or body[key].startswith('./')):
+                    question_key = key
+                    break
+            if question_key:
+                logger.info(f"Key: {question_key}")
+                file_path = body[question_key].replace('file://', '')
+                logger.info(f"Path: {file_path}")
+                if not os.path.exists(file_path):
+                    raise HTTPException(status_code=400, detail=f"Question file not found locally: {file_path}. Ensure the file exists in the local directory.")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    question_text = f.read()
+            else:
+                raise HTTPException(status_code=400, detail="No 'question', 'questions', or 'questions.txt' provided in JSON body")
+            
+            if not question_text or not question_text.strip():
+                raise HTTPException(status_code=400, detail="Question text is empty")
+
+            # Handle attachments in JSON (any key with file:// except question-related keys)
+            for key, value in body.items():
+                if key in ['question', 'questions', 'questions.txt']:
+                    continue
+                if isinstance(value, str) and value.startswith('file://'):
+                    file_path = value.replace('file://', '')
+                    if not os.path.exists(file_path):
+                        logger.warning(f"Attachment file not found locally: {file_path}. Skipping.")
+                        continue
+                    suffix = '.' + file_path.split('.')[-1] if '.' in file_path else ''
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                        with open(file_path, 'rb') as f:
+                            tmp_file.write(f.read())
+                        temp_file_paths.append((key, tmp_file.name))
+                        logger.info(f"Saved attachment: {key} -> {tmp_file.name}")
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str) and item.startswith('file://'):
+                            file_path = item.replace('file://', '')
+                            if not os.path.exists(file_path):
+                                logger.warning(f"Attachment file not found locally: {file_path}. Skipping.")
+                                continue
+                            suffix = '.' + file_path.split('.')[-1] if '.' in file_path else ''
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                                with open(file_path, 'rb') as f:
+                                    tmp_file.write(f.read())
+                                temp_file_paths.append((file_path.split('/')[-1], tmp_file.name))
+                                logger.info(f"Saved attachment: {file_path.split('/')[-1]} -> {tmp_file.name}")
+
+        except Exception as e:
+            logger.error(f"JSON parsing failed: {e}\n{traceback.format_exc()}")
+            raise HTTPException(status_code=400, detail="Invalid request: neither form data nor valid JSON provided. Ensure files exist locally.")
+
+    # Save form attachments to temp files (for form data compatibility)
+    for attachment in attachments:
+        suffix = "." + attachment.filename.split(".")[-1] if "." in attachment.filename else ""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            content = await attachment.read()
+            tmp_file.write(content)
+            temp_file_paths.append((attachment.filename, tmp_file.name))
+            logger.info(f"Saved attachment: {attachment.filename} -> {tmp_file.name}")
+
+    # Append temp file paths to question string
+    if temp_file_paths:
+        question_text += "\nAttachments:\n" + "\n".join(f"{fname}: {path}" for fname, path in temp_file_paths)
+    #logger.info(f"Final question text sent to process_question:\n{question_text}")
+
+    # Process question
+    try:
+        result = await asyncio.wait_for(process_question(question_text), timeout=300.0)
+    except Exception as e:
+        logger.error(f"Error processing question: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
+    # Cleanup temp files
+    for _, path in temp_file_paths:
+        try:
+            os.unlink(path)
+            logger.info(f"Cleaned up temp file: {path}")
+        except Exception as e:
+            logger.warning(f"Failed to clean up temp file {path}: {e}")
+
+    return JSONResponse(content=result)
