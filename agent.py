@@ -9,26 +9,20 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import numpy as np
-from json_repair import repair_json
+
 import requests
 from bs4 import BeautifulSoup
 import certifi
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.os_manager import ChromeType
+
 from sklearn.linear_model import LinearRegression
 import duckdb
 import pdfplumber
 import tempfile
 import pytesseract
-import tenacity
-from selenium.common.exceptions import WebDriverException, TimeoutException
-from fuzzywuzzy import fuzz
 
+from fuzzywuzzy import fuzz
+from sentence_transformers import SentenceTransformer, util  # Added SentenceTransformer import
+    
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -37,10 +31,17 @@ logger = logging.getLogger(__name__)
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 4
+
+SENTENCE_MODEL = None
+try:
+    _SENTENCE_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
+    logger.info("Successfully loaded SentenceTransformer model 'all-MiniLM-L6-v2'")
+except Exception as e:
+    logger.error(f"Failed to load SentenceTransformer: {e}", exc_info=True)
+    _SENTENCE_MODEL = None
 
 def initialize_duckdb():
-    import duckdb
     duckdb_dir = os.getenv("DUCKDB_HOME", "/tmp/duckdb")
     try:
         logger.info(f"Initializing DuckDB with database path: {duckdb_dir}/duckdb.db")
@@ -50,17 +51,18 @@ def initialize_duckdb():
         con.execute("SET http_timeout=30000")
         con.execute("INSTALL httpfs; LOAD httpfs;")
         con.execute("INSTALL parquet; LOAD parquet;")
-        con.execute("SET s3_use_ssl = true;")
-        con.execute("SET s3_access_key_id = '';")
-        con.execute("SET s3_secret_access_key = '';")
-        #aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
-        #aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+        aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        if aws_access_key and aws_secret_key:
+            con.execute(f"SET s3_access_key_id='{aws_access_key}'")
+            con.execute(f"SET s3_secret_access_key='{aws_secret_key}'")
+        con.execute("SET s3_region='ap-south-1'")
         return con
     except Exception as e:
         logger.error(f"Failed to initialize DuckDB: {e}", exc_info=True)
         raise
 
-async def ask_gpt(messages, model="gpt-4o", temperature=0):
+async def ask_gpt(messages, model="gpt-4o-mini", temperature=0):
     try:
         response = client.chat.completions.create(
             model=model,
@@ -75,110 +77,63 @@ async def ask_gpt(messages, model="gpt-4o", temperature=0):
 def extract_code_blocks(response):
     return re.findall(r"```python(.*?)```", response, re.DOTALL)
 
-async def safe_execute(code_blocks, global_vars):
-    from selenium.webdriver.chrome.service import Service
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import base64
-    from io import BytesIO, StringIO
-    import json
-    import re
-    import logging
-    from openai import OpenAI
-    from dotenv import load_dotenv
-    import os
-    import numpy as np
-    from json_repair import repair_json
-    import requests
-    from bs4 import BeautifulSoup
-    import certifi
+def init_selenium():
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.chrome.options import Options
+    from selenium.common.exceptions import WebDriverException, TimeoutException
+    from selenium.webdriver.chrome.service import Service  
     from webdriver_manager.chrome import ChromeDriverManager
     from webdriver_manager.core.os_manager import ChromeType
-    from sklearn.linear_model import LinearRegression
-    import duckdb
-    import pdfplumber
-    import tempfile
-    import pytesseract
-    import tenacity
-    from selenium.common.exceptions import WebDriverException, TimeoutException
-    from fuzzywuzzy import fuzz
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--disable-extensions')
+    options.binary_location = '/usr/bin/chromium'
+    service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+    driver = webdriver.Chrome(service=service, options=options)
+    logger.info("Selenium WebDriver initialized successfully.")
+    return driver
 
-    @tenacity.retry(
-        stop=tenacity.stop_after_attempt(3),
-        wait=tenacity.wait_fixed(2),
-        retry=tenacity.retry_if_exception_type((WebDriverException, TimeoutException)),
-        reraise=True
-    )
-    def init_selenium():
-        options = Options()
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--disable-extensions')
-        options.binary_location = '/usr/bin/chromium'
-        service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
-        driver = webdriver.Chrome(service=service, options=options)
-        logger.info("Selenium WebDriver initialized successfully.")
-        return driver
+async def safe_execute(code_blocks, global_vars):
 
-    # Initialize dfs if not already present
-    if 'dfs' not in global_vars:
-        global_vars['dfs'] = {}
-    if 'column_map' not in global_vars:
-        global_vars['column_map'] = {}
+    from selenium import webdriver
 
-    # Add core libraries to global_vars by default
-    global_vars['pd'] = pd
-    global_vars['np'] = np
-    global_vars['plt'] = plt
-    global_vars['base64'] = base64
-    global_vars['BytesIO'] = BytesIO
-    global_vars['StringIO'] = StringIO
-    global_vars['json'] = json
-    global_vars['re'] = re
-    global_vars['logging'] = logging
-    global_vars['os'] = os
-    global_vars['requests'] = requests
-    global_vars['BeautifulSoup'] = BeautifulSoup
-    global_vars['certifi'] = certifi
-    #global_vars['duckdb'] = duckdb
-    
+    global_vars.update({
+    'pd': pd, 'np': np, 'plt': plt, 'base64': base64,
+    'BytesIO': BytesIO, 'StringIO': StringIO, 'json': json,
+    're': re, 'logging': logging, 'os': os, 'requests': requests,
+    'BeautifulSoup': BeautifulSoup, 'certifi': certifi, 'fuzz': fuzz, 'infer_column_types': infer_column_types, 'clean_numeric_value': clean_numeric_value,
+    'SentenceTransformer': SentenceTransformer, 'util': util, 'logger': logger
+    })
+
+    # ADDED: Only include _SENTENCE_MODEL if defined and not None
+    if _SENTENCE_MODEL is not None:
+        global_vars['_SENTENCE_MODEL'] = _SENTENCE_MODEL
+    else:
+        logger.warning("Skipping _SENTENCE_MODEL in global_vars as it is None")
     
     for idx, code in enumerate(code_blocks):
         try:
             logger.info(f"Executing block {idx + 1}:\n{code.strip()}")
-            local_vars = {}
-
-            # Add custom functions to global_vars if defined in the code
-            custom_functions = ['clean_numeric_value', 'fetch_parquet_data', 'process_pdf', 'process_excel', 'process_csv', 'process_image', 'scrape_web_data']
-            for func in custom_functions:
-                if func in code:
-                    if func == 'clean_numeric_value':
-                        global_vars['clean_numeric_value'] = clean_numeric_value
-                    elif func == 'fetch_parquet_data':
-                        global_vars['fetch_parquet_data'] = globals().get('fetch_parquet_data', lambda: None)
-                    elif func == 'process_pdf':
-                        global_vars['process_pdf'] = globals().get('process_pdf', lambda x: None)
-                    elif func == 'process_excel':
-                        global_vars['process_excel'] = globals().get('process_excel', lambda x: None)
-                    elif func == 'process_csv':
-                        global_vars['process_csv'] = globals().get('process_csv', lambda x: None)
-                    elif func == 'process_image':
-                        global_vars['process_image'] = globals().get('process_image', lambda x: None)
-                    elif func == 'scrape_web_data':
-                        global_vars['scrape_web_data'] = globals().get('scrape_web_data', lambda x: None)
-                    logger.info(f"Added custom function '{func}' to global_vars")
-                    
-            if 'duckdb' in code:
+            if 'duckdb' in code or 'parquet' in code.lower():
+                import duckdb
                 global_vars['duckdb'] = duckdb
                 global_vars['con'] = initialize_duckdb()
-            if 'webdriver' in code:
+            if any(keyword in code.lower() for keyword in ['webdriver', 'chromedrivermanager', 'selenium', 'webdriver_manager']):
+                from selenium import webdriver
+                from selenium.webdriver.common.by import By
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                from selenium.webdriver.chrome.options import Options
+                from selenium.webdriver.chrome.service import Service
+                from selenium.common.exceptions import WebDriverException, TimeoutException
+                from webdriver_manager.chrome import ChromeDriverManager
+                from webdriver_manager.core.os_manager import ChromeType
                 driver = init_selenium()
                 global_vars['webdriver'] = webdriver
                 global_vars['Service'] = Service
@@ -197,47 +152,24 @@ async def safe_execute(code_blocks, global_vars):
                 global_vars['certifi'] = certifi
             if 'pytesseract' in code:
                 global_vars['pytesseract'] = pytesseract
-            if 'fuzz' in code:
-                global_vars['fuzz'] = fuzz
-            if 'clean_numeric_value' in code:
-                global_vars['clean_numeric_value'] = clean_numeric_value
+            if 'LinearRegression' in code:
+                from sklearn.linear_model import LinearRegression
+                global_vars['LinearRegression'] = LinearRegression
             if 'async' in code or 'await' in code:
                 import asyncio
                 async def run_async_code():
                     exec(code.strip(), global_vars)
                 await asyncio.run(run_async_code())
             else:
-                exec(code.strip(), global_vars, local_vars)
-
-            # Update global_vars with local_vars
-            global_vars.update({k: v for k, v in local_vars.items() if k in ['df', 'dfs', 'result', 'column_map']})
-            
-            # Log dfs contents for debugging
-            logger.info(f"global_vars['dfs'] keys: {list(global_vars.get('dfs', {}).keys())}")
-            logger.info(f"global_vars['column_map'] after execution: {global_vars.get('column_map', {})}")
-
-        # Validate DataFrames
-            has_valid_data = False
-            if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
-                for filename, df in global_vars['dfs'].items():
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        logger.info(f"Loaded DataFrame for {filename} with columns: {list(df.columns)}")
-                        has_valid_data = True
-                    else:
-                        logger.warning(f"Invalid or empty DataFrame for {filename}: {type(df)}")
-            if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame) and not global_vars['df'].empty:
+                exec(code.strip(), global_vars)
+            if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
+                if global_vars['df'].empty:
+                    logger.error("DataFrame is empty after loading.")
+                    return False, "Empty DataFrame loaded."
                 logger.info(f"Loaded DataFrame with columns: {list(global_vars['df'].columns)}")
-                global_vars['dfs']['default'] = global_vars['df']
-                has_valid_data = True
-            elif 'extracted_text' in global_vars and global_vars['extracted_text']:
-                logger.info(f"Extracted text: {global_vars['extracted_text']}")
-                has_valid_data = True
-            if not has_valid_data and 'result' not in global_vars:
-                logger.error("No valid non-empty DataFrame or result created.")
-                return False, "No valid DataFrame, extracted text, or result created."
-            if 'result' in global_vars:
-                logger.info(f"Result found: {global_vars['result']}")
-                return True, global_vars['result']
+            else:
+                logger.error("No DataFrame created.")
+                return False, "No DataFrame created."
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
@@ -248,8 +180,8 @@ async def safe_execute(code_blocks, global_vars):
                     logger.info("Selenium driver closed.")
                 except Exception as e:
                     logger.warning(f"Failed to close Selenium driver: {e}")
-    return True, global_vars.get('result', None)
-    
+    return True, None
+
 # Mapping of superscript digits to ASCII digits
 SUPERSCRIPT_DIGIT_MAP = {
     '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
@@ -260,9 +192,9 @@ def normalize_superscripts(value):
     """Convert superscript digits to ASCII equivalents and log superscript characters."""
     if not isinstance(value, str):
         value = str(value)
-    
+
     # Log any superscript characters found
-    superscript_chars = [char for char in value if ord(char) in range(0x2070, 0x209F) or ord(char) in [0x00B2, 0x00B3, 0x00B9]]
+    superscript_chars = [char for char in value if ord(char) in range(0x2070, 0x209F) or ord(char) in [0x00B2, 0x00B3, 0x00B9] or char == 'ᵀ']
     if superscript_chars:
         logger.info(f"Superscript characters detected in value: '{value}' (chars: {superscript_chars})")
     
@@ -272,6 +204,7 @@ def normalize_superscripts(value):
     
     return value
 
+    
 def clean_numeric_value(value):
     if pd.isna(value):
         return np.nan
@@ -308,7 +241,7 @@ def clean_numeric_value(value):
         return np.nan
         
 
-def infer_column_types(df, global_vars):
+def infer_column_types(df):
     numeric_cols, categorical_cols, temporal_cols = [], [], []
     date_formats = ['%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d']  # Common formats
     for col in df.columns:
@@ -318,10 +251,20 @@ def infer_column_types(df, global_vars):
             logger.warning(f"Column '{col}' has insufficient data; defaulting to categorical.")
             continue
 
+        # Check if column heading contains "date" (case-insensitive, fuzzy matching)
+        
+        if any(fuzz.partial_ratio(keyword, str(col).lower()) > 60 for keyword in ['date', 'Date']):
+            logger.info(str(col).lower(), keyword)
+            temporal_cols.append(col)
+            #global_vars['column_map'][col] = 'temporal'
+            logger.info(f"Column '{col}' categorized as temporal due to 'date' in heading (fuzzy match)")
+            logger.info(f"Sample data for '{col}': {sample.tolist()}")
+            continue
+
         # Check if column heading contains "name" (case-insensitive, fuzzy matching)
-        if any(fuzz.partial_ratio(keyword, str(col).lower()) > 60 for keyword in ['name', 'country', 'state']): 
+        if any(fuzz.partial_ratio(keyword, str(col).lower()) > 60 for keyword in ['name', 'country', 'state', 'title']): 
             categorical_cols.append(col)
-            global_vars['column_map'][col] = 'categorical'
+            #global_vars['column_map'][col] = 'categorical'
             logger.info(f"Column '{col}' categorized as categorical due to 'name' in heading (fuzzy match)")
             logger.info(f"Sample data for '{col}': {sample.tolist()}")
             continue
@@ -345,11 +288,15 @@ def infer_column_types(df, global_vars):
                 pass
         
         try:
-            temporal_sample = pd.to_datetime(sample, format=date_format, errors='coerce')
-            if temporal_sample.notna().sum() >= len(sample) * 0.7:
-                temporal_cols.append(col)
-                logger.info(f"Column '{col}' detected as temporal with format '{date_format}'")
+            for date_format in date_formats:  # Try each format
+                temporal_sample = pd.to_datetime(sample, format=date_format, errors='coerce')
+                if temporal_sample.notna().sum() >= len(sample) * 0.7:
+                    temporal_cols.append(col)
+                    logger.info(f"Column '{col}' detected as temporal with format '{date_format}'")
+                    break
+            else:  # If no format works, continue to next check
                 continue
+            continue
         except:
             pass
         
@@ -361,21 +308,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
     error_guidance = error_message
     if "HTTPConnectionPool" in error_message or "timeout" in error_message.lower():
         error_guidance += (
-            "\nSelenium timed out while loading the page. Increase WebDriverWait timeout to 30 seconds and use EC.presence_of_element_located((By.TAG_NAME, 'table')). "
+            "\nSelenium timed out while loading the page. Increase WebDriverWait timeout to 20 seconds and use EC.presence_of_element_located((By.TAG_NAME, 'table')). "
             "Add a timeout parameter to requests.get (e.g., timeout=30). Ensure network stability."
-        )
-    if "HTTP Error: HTTP GET error" in error_message.lower() or "HTTP 403" in error_message.lower():
-        error_guidance += (
-            "\nFailed to access S3 bucket due to an HTTP 403 (Forbidden) error. "
-            "For public S3 buckets, ensure the bucket has public read access (e.g., 'GetObject' permission for 'Principal: \"*\"' in the bucket policy). "
-            "Verify the S3 bucket and path exist and are correct. "
-            "Test S3 access with a minimal DuckDB query to confirm connectivity."
         )
     if "could not convert string to float" in error_message:
         error_guidance += (
             "\nCheck for non-numeric prefixes, suffixes, superscripts or annotations in numeric columns. "
             "Apply a cleaning function only to columns intended to be numeric based on question context. "
-            "Remove superscripts."
             "Handle formats like '$1,234', '₹1,234', '1.2 billion', or '1.2 million' by scaling appropriately (e.g., to millions)."
             "Preserve categorical columns like 'Name', 'Symbol', or 'Company Name' without cleaning."
         )
@@ -419,26 +358,13 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         )
     if "unable to obtain driver for chrome" in error_message.lower():
         error_guidance += (
-            "\nEnsure ChromeDriver is installed and accessible. Use Selenium with webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
+            "\nEnsure ChromeDriver is installed and accessible. Use webdriver_manager.chrome.ChromeDriverManager to automatically install and manage ChromeDriver. "
             "Do not specify a manual path; let webdriver_manager handle it."
         )
     if "column" in error_message.lower() or "key" in error_message.lower():
         error_guidance += (
             "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
-            "Column name mismatch detected (e.g., 'Product Demand' vs. 'Product_Demand'). "
-            "Do not assume specific column names like 'Name'. "
-            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
-            "Use relaxed fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to identify relevant columns. Accept matches with a similarity score as low as 50–60% "
-            "Check the DataFrame columns and adjust fuzzy matching to treat '%', 'percentage', and 'percent' as equivalent (threshold 60). "
-            "Check the DataFrame columns and adjust fuzzy matching to treat 'percent_change', '% Change', and '% change' as equivalent (threshold 60). "
-
-            "Verify columns exist using df.columns before processing. Log available columns for debugging."
-            "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
-        )
-    if "columns" in error_message.lower() or "keys" in error_message.lower():
-        error_guidance += (
-            "\nEnsure columns like 'Name', 'Symbol' (categorical), and 'Last Price', '% Change' (numeric) are preserved. "
-            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
+            "Do not assume specific column names like 'Name'. Use fuzzy matching (e.g., fuzzywuzzy.fuzz.partial_ratio) to find columns like 'Company Name', 'Symbol' for identifiers, or '% Change', 'Change' for numeric metrics. "
             "Verify columns exist using df.columns before processing. Log available columns for debugging."
             "Do not apply numeric cleaning to categorical columns. Verify columns exist before processing."
         )
@@ -487,50 +413,24 @@ async def regenerate_with_error(messages, error_message, stage="step"):
         error_guidance += (
             "\nFuzzy matching failed due to non-string column names (e.g., integers). Convert all column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching."
         )
-    if "no relevant table found" in error_message.lower():
-        error_guidance += (
-            "\nNo table was selected due to overly restrictive fuzzy matching. "
-            "Extract keywords from the question and use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) with a threshold > 60 to score and select the most relevant table. "
-            "Inspect all table columns and log them. Use fuzzy matching to map column names ."
-        )
-    if "no valid DataFrame or extracted text created" in error_message.lower():
-        error_guidance += (
-            "\nNo valid DataFrame or extracted text was stored. "
-            "For images, use pytesseract.image_to_string(file_path) to extract text and store it in global_vars['extracted_text'].Use regular expressions (e.g., r'R = (\d+\.?\d*)\s*miles') to parse specific values from the text."                 "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
-            "Ensure the generated code stores DataFrames in `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or in `df` and `dfs['default']` for a single source. "
-            "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data. "
-            "Log the contents of global_vars['dfs'], global_vars['df'], and global_vars['extracted_text'] after execution for debugging."
-        )
-    if "KeyError" in error_message.lower():
-        error_guidance += (
-            "\nA column name mismatch occurred . "
-            "Extract keywords from the question to guide column mapping. "
-            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) tto dynamically map column names based on context "
-            "Inspect DataFrame columns with df.columns.tolist() and log them. "
-            "Select columns dynamically using fuzzy matching with thresholds (e.g., > 70) for identifiers."
-        )
 
     messages.append({
         "role": "user",
         "content": (
             f"The previous {stage} failed with this error:\n\n{error_guidance}\n\n"
             "Regenerate the {stage}. Inspect the DataFrame's columns, dtypes, and sample data (first 5 rows) and print them for debugging. "
-            "Store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` and `dfs['default']` for a single source. "
-            "For images, use pytesseract.image_to_string(file_path) to extract text and store it in global_vars['extracted_text']. "
-            "For PDF files with multiple tables, concatenate tables into a single DataFrame using pd.concat(tables, ignore_index=True) if the question requires aggregated data (e.g., calculating averages across all tables). "
             "Do not assume specific column names. Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on keywords from the question (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
-            "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
             "Convert all column names to strings using `df.columns = df.columns.astype(str)` before fuzzy matching to handle non-string columns. "
             "Select columns based on question context and data types (numeric for metrics, categorical for identifiers, temporal for dates). "
             "Identify numeric, categorical, and temporal columns dynamically after cleaning data. "
             "Preserve categorical columns like 'Name', 'Symbol'. "
-            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like '$1,234','Rs1,234', '1.2 billion', '1.2%', or '-0.13%'. "
+            "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
             "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
-            "Extract fields dynamically based on question context using flexible regular expressions and fuzzy matching (fuzzywuzzy.fuzz.partial_ratio). "
             "For web scraping, select the correct table by checking for relevant columns"
             "Use the correct import for ChromeType: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
             "For JavaScript-rendered content, use Selenium with ChromeDriverManager to handle WebDriver setup. "
             "For S3-based Parquet files, use DuckDB with hive_partitioning=True and limit queries to relevant subsets. "
+            "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "
             "For plots, ensure base64 string is under 100,000 bytes by using format='png', figsize=(4,3), and dpi=80; reduce DPI further if needed."
             "Assign the final output to a variable named `result` (e.g., result = [...])."
         )
@@ -561,19 +461,25 @@ async def process_question(question: str):
                 "For PDF files, read using pdfplumber.open(file_path). Try extracting text with page.extract_text(). If no text is found, try OCR with pytesseract.image_to_string(page.to_image().original) for image-based PDFs, then extract tables with page.extract_tables(). "
                 "For Excel files, read using pandas.read_excel(file_path). "
                 "For CSV files, read using pandas.read_csv(file_path). "
-                "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions to extract specific values "
+                "For image files (e.g., PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
                 "Extract relevant data using regular expressions or table parsing based on the question’s context (e.g., company name, market cap, target price). "
-                "In some cases like company financials, or company stock price, it can be in any currency."
+                "**Column Mapping and Cleaning:**"
+                "- Always generate a `map_columns(df, required_columns, use_sort=False)` function to dynamically map column names based on the question's context. The function should:"
+                  "- Convert all column names to strings using `df.columns = df.columns.astype(str)` before fuzzy matching."
+                  "- Use `fuzzywuzzy.fuzz.partial_ratio` for fuzzy matching with a threshold > 40 to map keywords to DataFrame columns."
+                  "- If no matches meet the threshold and '_SENTENCE_MODEL' is not None, fall back to semantic similarity matching using SentenceTransformer (available as `_SENTENCE_MODEL`), choosing the column with the highest similarity score (> 0.5)."
+                  "- If '_SENTENCE_MODEL' is None, skip semantic matching and log a warning: 'Semantic matching skipped due to unavailable _SENTENCE_MODEL'."
+                  "- Log mappings (e.g., 'Mapped' 'change' to column '% Change' (score: 85)) and warn if no match is found."
+                  "- Handle equivalent column names (e.g., 'percent_change', '% Change', '% change' with threshold 60; 'Release date', 'Year' with threshold 60)."
+                  "- **STRICT REQUIREMENT – DO NOT VIOLATE:** Always use only the mapped column names from `global_vars['column_map']` for all DataFrame operations."
+
+                
                 "Clean numeric columns by removing non-numeric characters, prefixes, or annotations (e.g., 'T', 'RK' in '24RK'). Handle formats like '$1,234', '1.2 billion', or '1.2 million' (scale appropriately). "
-                "Clean numeric columns using `clean_numeric_value`, which normalizes superscript digits (e.g., '¹' to '1') and removes prefixes/suffixes (e.g., 'T', 'SM', 'ᴬ', 'ᴮ'). "                
                 "Preserve categorical columns (e.g., 'title', 'name'). Convert temporal columns to datetime, handling various formats. Drop rows with missing critical data. "
                 "Handle missing or malformed data by dropping rows or imputing sensibly based on the question’s requirements. "
                 "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data."
-                "Generate Python code only, executable locally, and store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source. "
-                "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
-                "For images, store extracted text in `global_vars['extracted_text']` and parse it for specific values using regular expressions."
-                "After selecting a table, use fuzzy matching to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
-                "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
+                "Generate Python code only, executable locally, and store the processed DataFrame in `df`. "
+                "For questions requiring multiple outputs, format as a JSON array or object based on the question structure. "
                 "For specific questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
                 "For plots, use matplotlib with figsize=(4,3), dpi=100, and encode to base64 using BytesIO, ensuring the base64 string is under 100,000 bytes (use format='png', reduce DPI if needed). "
                 "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
@@ -583,7 +489,7 @@ async def process_question(question: str):
         }
     ]
 
-    file_paths = {}
+    file_path = None
     if "Attachments:" in question:
         try:
             lines = [line.strip() for line in question.split('\n') if line.strip()]
@@ -603,46 +509,39 @@ async def process_question(question: str):
                 logger.error("No file path provided in attachment details")
                 return {"error": "No file path provided", "details": "Attachment details are empty"}
             
-            # Parse multiple attachments
-            for attachment_line in attachment_details:
-                logger.info(f"Parsing attachment line: {attachment_line}")
-                match = re.match(r"([^:]+):\s*(.+)", attachment_line)
-                if not match:
-                    logger.error(f"Invalid attachment format: {attachment_line}")
-                    continue
-                filename, path = match.groups()
-                file_paths[filename.strip()] = path.strip()
-                logger.info(f"Extracted file: {filename} -> {path}")
-                if not os.path.exists(path.strip()):
-                    logger.error(f"File not found at path: {path}")
-                    file_paths[filename.strip()] = None  # Mark as invalid
+            attachment_line = attachment_details[0]
+            logger.info(f"Parsing attachment line: {attachment_line}")
+            match = re.match(r"([^:]+):\s*(.+)", attachment_line)
+            if not match:
+                logger.error(f"Invalid attachment format: {attachment_line}")
+                return {"error": "Invalid attachment format", "details": f"Expected 'filename: path', got '{attachment_line}'"}
+            
+            filename, path = match.groups()
+            file_path = path.strip()
+            logger.info(f"Extracted file path: {file_path}")
+            if not os.path.exists(file_path):
+                logger.error(f"File not found at path: {file_path}")
+                return {"error": "File not found", "details": f"No file exists at {file_path}"}
         except Exception as e:
-            logger.error(f"Failed to extract file paths from question: {e}")
-            return {"error": "Failed to extract file paths", "details": str(e)}
+            logger.error(f"Failed to extract file path from question: {e}")
+            return {"error": "Failed to extract file path", "details": str(e)}
     else:
         logger.info("No attachments specified; proceeding with question processing")
-
         
     messages.append({
         "role": "user",
         "content": (
             f"Analyze and break down this task into clear steps: {question}. "
-            f"{'The question includes attachments with file paths: ' + str(file_paths) if file_paths else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
-            "For multiple attachments, process each file based on its extension: use pdfplumber for .pdf, pandas.read_excel for .xlsx, pandas.read_csv for .csv, and pytesseract for images. "           
+            f"{'The question includes an attachment with file path: ' + file_path if file_path else 'No attachments provided; assume the question may contain inline data or require external sources (e.g., web scraping).'} "
             "Identify the data source (e.g., URL, S3 path, local file) and fetch it appropriately. "
-            "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets to avoid excessive data loading. "
-            "When generating SQL queries for DuckDB, avoid using JULIANDAY, DATE, or DATE_DIFF functions for date calculations. For date parsing, use STRPTIME(column, '%d-%m-%Y')::DATE for DD-MM-YYYY format or STRPTIME(column, '%Y-%m-%d')::DATE for YYYY-MM-DD format, based on sample data. For calculating the difference in days between two dates, use DATE_SUB('day', start_date, end_date). For date formatting, use STRFTIME('%Y-%m-%d', column_name). Validate date formats by sampling data before querying."
+            "For S3-based Parquet files, inspect partitions with `SELECT DISTINCT` and limit queries to relevant subsets. "
             "For local PDF files, use a relative path (e.g., os.path.join(os.getcwd(), 'data', 'filename.pdf')). "
-            "For PDF files with multiple tables, concatenate all tables into a single DataFrame using pd.concat(tables, ignore_index=True) to ensure all data is aggregated for analysis. "
             "For remote PDF files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile. "
             "For each step, describe how to inspect and handle data dynamically (e.g., inferring column types after cleaning, handling special prefixes like 'T'). "
             "If the question involves a specific URL, S3 path, or local file, include code to fetch the data in the first step, ensuring the correct table is selected by checking column names."
             "For web scraping, inspect all tables, print their column headings, and select the most relevant table based on the question’s context. "
             "If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables. "
             "Inspect all tables, print their column headings, and select the most relevant table based on the question’s context." 
-            "After selecting a table, use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
-            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
-            "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "                
             "Describe how to clean and analyze data dynamically, selecting columns based on context and data types."
         )
@@ -661,37 +560,28 @@ async def process_question(question: str):
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
-                f"{'The question specifies attachments at paths: ' + str(file_paths) if file_paths else 'No attachments provided; check for inline data or external sources.'} "                "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
-                "For each attachment, determine its type by extension and process accordingly:"                
+                f"{'The question specifies a PDF OR Excel or Word file at path: ' + file_path if file_path else 'No attachments provided; check for inline data in the question or external sources (e.g., web scraping based on URLs or keywords).'} "
+                "The question may specify processing files at URLs, S3 paths, local server paths, or temporary file paths (e.g., 'Attachments: filename: /tmp/...'). "
                 "- For PDFs, use pdfplumber.open(file_path) to extract text or tables; use pytesseract.image_to_string(page.to_image().original) for image-based PDFs. "
                 "- For Excel files, use pandas.read_excel(file_path). "
                 "- For CSV files, use pandas.read_csv(file_path). "
                 "- For images (PNG, JPG), use pytesseract.image_to_string(file_path) to extract text, then parse with regular expressions. "
                 "Verify each file is accessible before processing. If a file cannot be accessed, log an error and skip it. "
                 "For remote files, download using requests.get(url, stream=True, verify=certifi.where(), timeout=30) and save to a temporary file with tempfile.NamedTemporaryFile."
-                "For PDF files with multiple tables, concatenate all tables into a single DataFrame using pd.concat(tables, ignore_index=True) to ensure all data is aggregated for analysis. "
                 "For S3-based Parquet files, use DuckDB with `hive_partitioning=True`, inspect partitions with `SELECT DISTINCT`, and limit queries to relevant subsets. "
                 "For web scraping, fetch all tables with `pandas.read_html` using `StringIO` and `requests`, with `certifi` for SSL verification, print column headings, and select the most relevant table. If no tables are found, use Selenium with ChromeDriverManager to render the page and extract tables.  "
                 "Use the correct import: `from webdriver_manager.core.os_manager import ChromeType` (do NOT use `webdriver_manager.core.utils`). "
                 "Extract data using regular expressions or table parsing to answer the question’s requirements."
-                "After selecting a table, use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
-                "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
-                "When generating SQL queries for DuckDB, avoid using JULIANDAY, DATE, or DATE_DIFF functions for date calculations. For date parsing, use STRPTIME(column, '%d-%m-%Y')::DATE to handle dates in DD-MM-YYYY format (e.g., '01-01-1995'). For calculating the difference in days between two dates, use DATE_SUB('day', start_date, end_date), e.g., DATE_SUB('day', STRPTIME(date_of_registration, '%d-%m-%Y')::DATE, STRPTIME(decision_date, '%d-%m-%Y')::DATE). For date formatting, use STRFTIME, e.g., STRFTIME('%Y-%m-%d', column_name). Ensure the final query output is stored in a DataFrame assigned to the variable result. Validate that all date columns are in the correct format before performing calculations."
-                "For regressions or correlations, use only non-null data with df[['col1', 'col2']].dropna(). "                
                 "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns based on question context (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
-                "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
                 "Convert all table column names to strings using `table.columns = table.columns.astype(str)` before fuzzy matching to handle non-string columns. "
                 "Do not assume specific column names. Print DataFrame columns, dtypes, and sample data (first 5 rows) for debugging. "
                 "Infer numeric, categorical, and temporal columns dynamically after cleaning data. "
                 "Clean numeric columns by removing non-numeric characters, prefixes (e.g., 'T'), and handling formats like '$1,234' or '1.2 billion' (scale to millions). "
-                "Clean numeric columns using `clean_numeric_value`, which normalizes superscript digits (e.g., '¹' to '1') and removes prefixes/suffixes (e.g., 'T', 'SM', 'ᴬ', 'ᴮ'). "
-                "Log values containing superscript characters before and after cleaning. "
                 "Use StringIO for pd.read_html to avoid deprecation warnings. Drop rows with missing critical data for all required columns. "
                 "For web scraping, select the correct table by checking for relevant columns (e.g., 'Worldwide gross' instead of 'Gross')."
                 "Convert temporal columns to datetime with flexible parsing. "
                 "Drop rows with missing critical data for the question’s requirements."
-                "Store processed DataFrames in a dictionary `dfs` with filenames as keys (e.g., dfs['data.pdf'] = df_pdf) for multiple sources or a single DataFrame in `df` for a single source (e.g., web scraping, single file). "
-                "Set `global_vars['dfs']` for multiple DataFrames or `global_vars['df']` for a single DataFrame. If a single DataFrame is created, also store it in `dfs['default']` for consistency."
+                "Store the DataFrame in `df` and set `global_vars['df']`."
             )
         })
         code_response = await ask_gpt(messages)
@@ -709,49 +599,28 @@ async def process_question(question: str):
             return {"error": "Step code execution failed after max attempts", "details": error}
 
     metadata_info = "No dataframe created."
-    if 'dfs' in global_vars and isinstance(global_vars['dfs'], dict) and global_vars['dfs']:
-        metadata_info = ""
-        for filename, df in global_vars['dfs'].items():
-            if isinstance(df, pd.DataFrame):
-                buffer = StringIO()
-                df.info(buf=buffer)
-                buffer.seek(0)
-                metadata_info += f"\nFile: {filename}\n{buffer.getvalue()}"
-                numeric_cols, categorical_cols, temporal_cols = infer_column_types(df, global_vars)
-                metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
-                metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
-                metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
-                metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
-            else:
-                metadata_info += f"\nFile: {filename}\nNo valid DataFrame created."
-    elif 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
-        buffer = StringIO()
-        global_vars['df'].info(buf=buffer)
-        buffer.seek(0)
-        metadata_info = f"\nSingle DataFrame:\n{buffer.getvalue()}"
-        numeric_cols, categorical_cols, temporal_cols = infer_column_types(global_vars['df'], global_vars)
-        metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
-        metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
-        metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
-        metadata_info += "\nSample data (first 5 rows):\n" + str(global_vars['df'].head(5))
-        global_vars['dfs']['default'] = global_vars['df']
-    elif 'extracted_text' in global_vars and global_vars['extracted_text']:
-        metadata_info = f"\nExtracted Text:\n{global_vars['extracted_text']}"
+    if "df" in global_vars and isinstance(global_vars["df"], pd.DataFrame):
+        try:
+            df = global_vars["df"]
+            buffer = StringIO()
+            df.info(buf=buffer)
+            buffer.seek(0)
+            metadata_info = buffer.getvalue()
+            numeric_cols, categorical_cols, temporal_cols = infer_column_types(df)
+            metadata_info += f"\nInferred Numeric Columns: {numeric_cols}"
+            metadata_info += f"\nInferred Categorical Columns: {categorical_cols}"
+            metadata_info += f"\nInferred Temporal Columns: {temporal_cols}"
+            metadata_info += "\nSample data (first 5 rows):\n" + str(df.head(5))
+        except Exception as e:
+            metadata_info = f"Error retrieving DataFrame metadata: {str(e)}"
     logger.info(f"DataFrame Metadata:\n{metadata_info}")
-
-    
 
     messages.append({
         "role": "user", 
         "content": (
             f"The dataframe metadata is:\n{metadata_info}\n\n"
-            "Generate Python code to answer the question. Use the preprocessed DataFrames in `dfs`"
-            "Determine which DataFrame to use based on the question context. "# (e.g., use dfs['data.pdf'] for questions about subjects and averages, dfs['exc.xlsx'] for questions about product demand). "
-            "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to dynamically identify and map column names with a threshold > 70, avoiding hardcoded column names. Log the mapped column names for debugging."
-            "Store the column mappings in a `column_map` dictionary and ensure it is assigned to `global_vars['column_map']` for persistence across execution steps."
-            "Ensure all subsequent operations (e.g., cleaning, dropping rows) use the mapped column names from the column_map dictionary (e.g., df[column_map['change']]) instead of hardcoded names. Add a check to verify all required mappings exist before proceeding, and log a warning if any are missing."
+            "Generate Python code to answer the question. Use the preprocessed DataFrame `df`."
             "Use fuzzy matching (fuzzywuzzy.fuzz.partial_ratio) to select columns (e.g., 'name', 'company', 'symbol' for identifiers; 'change', 'percent' for metrics). "
-            "Dynamically infer the role of table columns based on their content and question context. If the question asks for a list of entities (e.g., 'subjects', 'categories') and their aggregates (e.g., 'averages', 'sums'), treat columns with primarily numeric values (after applying clean_numeric_value) as the entities of interest, using their column names as the entity list and their values for aggregation. "
             "Inspect columns and infer types (numeric, categorical, temporal) using `infer_column_types`. "
             "Select columns based on question context"
             "For temporal columns, convert to datetime, handling formats like 'DD-MM-YYYY', 'YYYY-MM-DD', or others inferred from sample data. "
@@ -761,7 +630,6 @@ async def process_question(question: str):
             "Handle edge cases: return '0.0' for slopes or correlations if data is insufficient (e.g., <2 non-null rows); return 'None' for empty results in filtering operations. "
             "The output format depends on the question: for questions like 'scrape the list of highest-grossing films', return a JSON array of strings [int, string, float, base64 string] with raw values (e.g., '2', 'Titanic', '0.95', 'data:image/png;base64,...'), not formatted sentences. "
             "Assign the final output to a variable named `result` (e.g., result = [...]). Do not only print the output; ensure it is assigned to `result`. "
-            "Store the result in `global_vars['result']` and update `global_vars['dfs']` with any created DataFrames."
             "Validate that the output matches the expected type and structure before returning."
         )
     })
@@ -825,6 +693,3 @@ async def process_question(question: str):
     except Exception as e:
         logger.error(f"Result extraction failed: {e}")
         return {"error": "Result extraction failed", "details": str(e)}
-
-    
-
