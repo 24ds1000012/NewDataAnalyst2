@@ -36,6 +36,12 @@ from sentence_transformers import SentenceTransformer, util
 import duckdb
 import pdfplumber
 import pytesseract
+# NEW: Add camelot for robust PDF table extraction
+try:
+    import camelot
+except ImportError:
+    camelot = None
+    logging.warning("Camelot not installed; some PDF table extractions may fail.")
 
 # --- Fuzzy matching ---
 from fuzzywuzzy import fuzz  # (kept for compatibility)
@@ -125,7 +131,7 @@ def normalize_superscripts(value: Any) -> str:
     """Convert superscripts to ASCII using precompiled map."""
     if not isinstance(value, str):
         value = str(value)
-    if any(ord(c) in range(0x2070, 0x209F) or ord(c) in [0x00B2,0x00B3,0x00B9] or c == 'ᵀ' for c in value):
+    if any(ord(c) in range(0x2070, 0x209F) or ord(c) in [0x00B2,0x00B3,0x00B9] or c == 'ᵀ'  or c == 'ᴬ'  or c == 'ˢ'  or c == 'ᴹ'  or c == 'ᴮ'  or c == 'ᶜ'  or c == 'ᴰ'  or c == 'ᴱ'  or c == 'ᶠ' or c == 'ᴳ' or c == 'ᴴ' or c == 'ᴵ' or c == 'ᴶ' or c == 'ᴷ' or c == 'ᴸ' or c == 'ᴺ' or c == 'ᴼ' or c == 'Q' or c == 'ᴿ'  or c == 'ᵁ'  or c == 'ⱽ' or c == 'ᵂ'  or c == 'ˣ'  or c == 'ʸ'  or c == 'ᶻ' for c in value):
         logger.info(f"Superscripts detected in '{value}'")
     return value.translate(_SUP_DIGITS)
 
@@ -163,6 +169,63 @@ def clean_numeric_value(value: Any) -> float:
 # CHANGE: vectorized version for pandas Series
 def clean_numeric_series(series: pd.Series) -> pd.Series:
     return series.map(clean_numeric_value)
+
+
+# NEW: Helper function to extract tables from PDF using multiple methods
+def extract_pdf_tables(pdf_path: str) -> List[pd.DataFrame]:
+    tables = []
+    logger.info(f"Attempting to extract tables from PDF: {pdf_path}")
+    
+    # Try pdfplumber first
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                page_tables = page.extract_tables()
+                for table in page_tables:
+                    if table and len(table) > 1 and table[0]:  # Ensure table has header and data
+                        df = pd.DataFrame(table[1:], columns=[str(c).strip() for c in table[0]])
+                        if not df.empty:
+                            tables.append(df)
+        if tables:
+            return tables
+    except Exception as e:
+        logger.warning(f"pdfplumber failed: {e}")
+    
+    # Camelot fallback
+    if camelot:
+        try:
+            tables_camelot = camelot.read_pdf(pdf_path, pages='all', flavor='lattice')
+            for t in tables_camelot:
+                df = t.df.copy()
+                df.columns = [str(c).strip() for c in df.columns]
+                if not df.empty:
+                    tables.append(df)
+            if tables:
+                return tables
+        except Exception as e:
+            logger.warning(f"Camelot extraction failed: {e}")
+
+    # OCR fallback (pytesseract)
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ''
+                if not text.strip():
+                    img = page.to_image(resolution=200).original
+                    text = pytesseract.image_to_string(img)
+                lines = [l for l in text.splitlines() if l.strip()]
+                if len(lines) > 1:
+                    df = pd.read_csv(StringIO('\n'.join(lines)), sep=r'\s+', on_bad_lines='skip')
+                    if not df.empty:
+                        tables.append(df)
+        if tables:
+            return tables
+    except Exception as e:
+        logger.warning(f"OCR fallback failed: {e}")
+
+    logger.error("No tables extracted from PDF")
+    return []
+    
 
 def infer_column_types(df: pd.DataFrame) -> Tuple[List[str], List[str], List[str]]:
     numeric_cols, categorical_cols, temporal_cols = [], [], []
@@ -346,7 +409,8 @@ async def safe_execute(code_blocks: List[str], global_vars: Dict[str, Any]):
         'certifi': certifi, 'fuzz': fuzz, 'util': util, 'logger': logger,
         'clean_numeric_value': clean_numeric_value, 'clean_numeric_series': clean_numeric_series,
         'infer_column_types': infer_column_types, 'map_columns': map_columns,
-        '_SENTENCE_MODEL': _SENTENCE_MODEL
+        '_SENTENCE_MODEL': _SENTENCE_MODEL, # NEW: Expose new helper function
+        'extract_pdf_tables': extract_pdf_tables
     })
 
     # pre-inject duckdb & connection if needed by any block
@@ -372,9 +436,32 @@ async def safe_execute(code_blocks: List[str], global_vars: Dict[str, Any]):
                 global_vars['pytesseract'] = pytesseract
             if 'LinearRegression' in code:
                 global_vars['LinearRegression'] = LinearRegression
+            if 'camelot' in code.lower() and camelot:
+                global_vars['camelot'] = camelot
 
             # CHANGE: run exec in a worker thread to avoid blocking
             await asyncio.to_thread(exec, code, global_vars)
+
+            # --- Track all DataFrames dynamically ---
+            if 'dataframes' not in global_vars:
+                global_vars['dataframes'] = {}
+
+            for k, v in global_vars.items():
+                if isinstance(v, pd.DataFrame):
+                    if k not in global_vars['dataframes']:
+                        global_vars['dataframes'][k] = v
+                        logger.info(f"[safe_execute] Tracking DataFrame '{k}' with columns: {list(v.columns)}")
+
+            # Fallback for code expecting a single df
+            if 'df' not in global_vars and global_vars['dataframes']:
+                first_df_name = next(iter(global_vars['dataframes']))
+                global_vars['df'] = global_vars['dataframes'][first_df_name]
+                logger.info(f"[safe_execute] Fallback: using first DataFrame '{first_df_name}' as 'df'")
+
+            # Add helper to access any dataframe by name or fallback to df
+            global_vars['get_df'] = lambda name=None: (
+                global_vars['df'] if name is None else global_vars['dataframes'].get(name))
+
 
             if 'df' in global_vars and isinstance(global_vars['df'], pd.DataFrame):
                 if global_vars['df'].empty:
@@ -383,7 +470,11 @@ async def safe_execute(code_blocks: List[str], global_vars: Dict[str, Any]):
                 logger.info(f"Loaded DataFrame with columns: {list(map(str, global_vars['df'].columns))}")
             else:
                 # not all code blocks must yield df, but your pipeline expects it after step code
-                logger.info("No DataFrame yet from this block (may be expected for planning/setup).")
+                if global_vars.get('dataframes'):
+                    df_names = list(global_vars['dataframes'].keys())
+                    logger.info(f"No single 'df' assigned yet. Available DataFrames: {df_names}")
+                else:
+                    logger.info("No DataFrame yet from this block (may be expected for planning/setup).")
         except Exception as e:
             logger.error(f"Code block {idx + 1} failed: {e}")
             return False, str(e)
@@ -483,11 +574,14 @@ async def regenerate_with_error(messages, error_message, stage="step"):
             f"The previous {stage} failed with this error:\n\n{error_guidance}\n\n"
             "Regenerate the {stage}. Inspect df columns/dtypes/head. Use fuzzy matching with df.columns cast to str. "
             "Map required columns via map_columns(); prefer numeric cleaning only on mapped numeric fields. "
-            "For S3 Parquet, use DuckDB with hive_partitioning and restricted subsets. "
-            "For plots, ensure base64 < 100kB using format='png', small figsize, and dpi tweaks. "
+            "For S3 Parquet or DuckDB sources, always use hive_partitioning=True and WHERE clauses to filter only necessary partitions to avoid loading the full dataset. When possible, project only the required columns instead of using SELECT *. "
+            "If no tables found on web, fall back to Selenium. "
+            "Only generate plots if the user's request explicitly asks for a plot, chart, graph, or visualization. "
+            "If plotting is requested, use matplotlib with figsize=(4,3), dpi<=100, bbox_inches='tight' to keep base64 < 100kB. "
+            "After applying the fixes, continue executing the full analysis to answer the user's original question(s) completely and assign the final output to `result`. "
+            "Ensure that `result` contains all required answers in the order of the questions. "
             "Analyze the user's question to determine the requested output format (e.g., JSON array of strings or JSON object with specific keys). "
-            "Return `result` as the requested format, answering all questions in the order asked. "
-            "Assign the final output to `result`."
+            "Do not stop after preprocessing or cleaning; produce the final answers as requested."
         )
     })
     return await ask_gpt(messages)
@@ -518,14 +612,18 @@ async def process_question(question: str):
             "role": "system",
             "content": (
                 "You are a Data Analyst Agent tasked with answering arbitrary analysis questions by generating Python code. "
+                "If there are multiple attachments of any type, load each into a separate DataFrame and store them in `global_vars['dataframes']`.Use `get_df(name)` to access a specific DataFrame, or `get_df()` for the default/fallback DataFrame."
                 "Assume unknown data sources (web, DuckDB/S3 Parquet, local files). Avoid loading huge partitions; prefer hive partitions and selective queries. "
+                "For S3 Parquet or DuckDB sources, always use hive_partitioning=True and WHERE clauses to filter only necessary partitions to avoid loading the full dataset. When possible, project only the required columns instead of using SELECT *. "                
                 "For web tables use requests + certifi + pandas.read_html(StringIO(...)). If no tables found, fall back to Selenium. "
+                "For extracting tables from PDF attachments, always use the provided `extract_pdf_tables(pdf_path)` function, which returns a list of pandas DataFrames. It handles extraction using pdfplumber as primary, camelot (if installed) as fallback, and pytesseract for OCR if needed. Do not implement your own extraction logic—call this function directly."
                 "Convert df.columns to str before fuzzy matching. Use fuzzy matching (>40) and, if available, semantic fallback via _SENTENCE_MODEL. "
                 "Use map_columns(df, required_columns) to get a dict mapping target to column names and log the output of map_columns."
                 "Preserve categoricals, parse temporals with pd.to_datetime(errors='coerce'). "
-                "For plots, use matplotlib with figsize=(4,3), dpi<=100, bbox_inches='tight' to keep base64 < 100kB. "
+                "Only generate plots if the user's request explicitly asks for a plot, chart, graph, or visualization. "
+                "If plotting is requested, use matplotlib with figsize=(4,3), dpi<=100, bbox_inches='tight' to keep base64 < 100kB. "
                 "Always produce and use map_columns(df, required_columns, use_sort=False). Use only mapped names for operations. "
-                "Preserve categoricals and parse temporal columns. Clean numeric columns robustly (currency, percent, scale words, superscripts) "
+                "Preserve categoricals and parse temporal columns. **For numeric columns, always use the provided `clean_numeric_value` function or `clean_numeric_series` for cleaning, including currency symbols, commas, scale words (million, billion, crore), and superscripts.** "
                 "Use matplotlib with small figsize/dpi, and return base64 under 100kB. "
                 "Analyze the user's question to determine the requested output format (e.g., JSON array of strings or JSON object with specific keys). "
                 "Return `result` as the requested format, answering each question in the order asked. "
@@ -535,7 +633,7 @@ async def process_question(question: str):
     ]
 
     # Attachment parsing (kept)
-    file_path = None
+    file_paths = []
     if "Attachments:" in question:
         try:
             lines = [line.strip() for line in question.split('\n') if line.strip()]
@@ -548,22 +646,29 @@ async def process_question(question: str):
                 return {"error": "No valid attachment section", "details": "Missing 'Attachments:' header"}
             attachment_details = lines[attachment_start + 1:]
             if not attachment_details:
-                return {"error": "No file path provided", "details": "Attachment details are empty"}
-            match = re.match(r"([^:]+):\s*(.+)", attachment_details[0])
-            if not match:
-                return {"error": "Invalid attachment format", "details": f"Expected 'filename: path', got '{attachment_details[0]}'"}
-            _, path = match.groups()
-            file_path = path.strip()
-            if not os.path.exists(file_path):
-                return {"error": "File not found", "details": f"No file exists at {file_path}"}
+                return {"error": "No file paths provided", "details": "Attachment details are empty"}
+            for detail in attachment_details:
+                match = re.match(r"([^:]+):\s*(.+)", detail)
+                if not match:
+                    return {"error": "Invalid attachment format", "details": f"Expected 'filename: path', got '{detail}'"}
+                _, path = match.groups()
+                path = path.strip()
+                if not os.path.exists(path):
+                    return {"error": "File not found", "details": f"No file exists at {path}"}
+                file_paths.append(path)
         except Exception as e:
-            return {"error": "Failed to extract file path", "details": str(e)}
+            return {"error": "Failed to extract file paths", "details": str(e)}
+
+    if file_paths:
+        attachments_msg = "The question includes one or more attachments with file paths: " + ", ".join(file_paths)
+    else:
+        attachments_msg = "No attachments provided; assume inline data or external sources."
 
     messages.append({
         "role": "user",
         "content": (
             f"Analyze and break down this task into clear steps: {question}. "
-            f"{'The question includes an attachment with file path: ' + file_path if file_path else 'No attachments provided; assume inline data or external sources.'} "
+            f"{attachments_msg} "
             "Identify the source and how to fetch it; use selective S3/DuckDB reads; inspect and clean data; map columns with map_columns."
         )
     })
@@ -588,8 +693,9 @@ async def process_question(question: str):
             "role": "user",
             "content": (
                 "Write Python code to fetch and preprocess the data based on the task breakdown. "
-                f"{'The question specifies a PDF/Excel/Word file at path: ' + file_path if file_path else 'No attachments provided; check for inline data or scrape as needed.'} "
+                f"{attachments_msg} "
                 "Prefer selective S3/DuckDB reads with hive_partitioning=True. For web, use requests+read_html(StringIO). If none, fall back to Selenium. "
+                "For PDF files, call `tables = extract_pdf_tables(pdf_path)` to get a list of DataFrames, then combine them if needed (e.g., `combined_df = pd.concat(tables, ignore_index=True)` if multiple tables). "
                 "Print df columns/dtypes/head for debugging. Store the DataFrame in `df` and set `global_vars['df']`."
             )
         })
@@ -631,7 +737,8 @@ async def process_question(question: str):
             f"The dataframe metadata is:\n{metadata_info}\n\n"
             "Generate Python code to answer the question using `df`. "
             "Use map_columns to select columns; clean numeric fields; parse temporals; use df[[x,y]].dropna() for stats. "
-            "Plot small (figsize=(4,3), dpi<=100) and return base64 under 100kB. "
+            "Only generate a plot if the user's question explicitly requests a plot, chart, graph, or visualization. "
+            "If plotting is requested, use matplotlib with figsize=(4,3), dpi<=100, and return base64 under 100kB. "
             "Analyze the user's question to determine the requested output format (e.g., JSON array of strings or JSON object with specific keys). "
             "Return `result` matching the requested format, answering all questions in the order asked."
         )
@@ -646,6 +753,8 @@ async def process_question(question: str):
         final_blocks = extract_code_blocks(final_code)
         success, error = await safe_execute(final_blocks, global_vars)
         if success:
+            if not ("result" in global_vars or "results" in global_vars):
+                raise ValueError("Code executed but did not assign computed answers to `result`.")
             break
         elif final_attempt < MAX_ATTEMPTS:
             final_code = await regenerate_with_error(messages, error or "Execution failed", "final code")
@@ -658,6 +767,15 @@ async def process_question(question: str):
         result = global_vars.get("results", global_vars.get("result"))
         if result is None:
             raise ValueError("No variable `result` or `results` found.")
+
+        # CHANGE: Ensure the result contains all expected answers if multi-part question
+        if isinstance(result, list):
+            # crude heuristic: if question contains multiple '?', expect multiple answers
+            expected_parts = question.count('?')
+            if expected_parts > 1 and len(result) < expected_parts:
+                raise ValueError(f"Incomplete result: got {len(result)} items, expected {expected_parts} based on question analysis.")
+
+        
         if isinstance(result, str):
             try:
                 result = json.loads(repair_json(result))
@@ -673,6 +791,11 @@ async def process_question(question: str):
                 return {k: to_json_safe(v) for k, v in obj.items()}
             return obj
         result = to_json_safe(result)
+
+        # CHANGE: Final validation to catch cases where cleaning was done but computations skipped
+        if isinstance(result, dict) and "data_preview" in result and len(result) <= 2:
+            raise ValueError("Result appears to contain only preview metadata, not the computed answers.")
+        
         json.dumps(result)  # validate
         logger.info(f"Final result: {result}")
         return result
